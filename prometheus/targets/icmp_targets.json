@@ -1,0 +1,10 @@
+[
+  {
+    "labels": {
+      "service": "ping-check"
+    },
+    "targets": [
+      "google.de"
+    ]
+  }
+]

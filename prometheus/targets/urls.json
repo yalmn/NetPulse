@@ -1,0 +1,10 @@
+[
+  {
+    "labels": {
+      "service": "web-check"
+    },
+    "targets": [
+      "http://www.google.de"
+    ]
+  }
+]

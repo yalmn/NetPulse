@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Monitoring Targets</title>
+  <meta http-equiv="refresh" content="15">
+  <link rel="stylesheet" href="{{ url_for('static', path='/style.css') }}">
+</head>
+<body>
+  <div class="container">
+    <h1>Monitoring Target Verwaltung</h1>
+
+    <div class="top-links">
+      <a href="/docs" target="_blank">Swagger API</a>
+      <a href="http://localhost:9090/targets" target="_blank">Prometheus Targets</a>
+      <a href="http://localhost:3000" target="_blank">Grafana</a>
+    </div>
+
+    {% if message %}
+      <div class="alert success">{{ message }}</div>
+    {% endif %}
+
+    {% if error %}
+      <div class="alert error">{{ error }}</div>
+    {% endif %}
+
+    <div class="card">
+      <h2>Neues Target hinzufügen</h2>
+      <form action="/ui/add" method="post" class="add-form">
+        <label for="target_type">Typ</label>
+        <select name="target_type" id="target_type" required>
+          <option value="http">HTTP/HTTPS</option>
+          <option value="https">Nur HTTPS</option>
+          <option value="icmp">ICMP</option>
+        </select>
+
+        <label for="target">Target</label>
+        <input
+          type="text"
+          name="target"
+          id="target"
+          placeholder="z. B. https://example.com oder 8.8.8.8"
+          required
+        >
+
+        <button type="submit">Hinzufügen</button>
+      </form>
+    </div>
+
+    <div class="grid">
+      {% for target_type, data in targets_data.items() %}
+        <div class="card">
+          <h2>{{ target_type|upper }}</h2>
+
+          {% if data.targets %}
+            <div class="table-wrap">
+              <table class="targets-table">
+                <thead>
+                  <tr>
+                    <th>Target</th>
+                    <th>Status</th>
+                    <th>Dauer</th>
+                    <th>Verfügbar 5m</th>
+                    <th>Aktion</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for item in data.targets %}
+                    <tr>
+                      <td>
+                        <div class="target-cell">
+                          <span>{{ item.value }}</span>
+                          <a class="small-link" href="{{ item.prometheus_link }}" target="_blank">Prometheus</a>
+                        </div>
+                      </td>
+                      <td>
+                        <span class="status-badge status-{{ item.status }}">
+                          {{ item.status }}
+                        </span>
+                      </td>
+                      <td>
+                        {% if item.probe_duration_seconds is not none %}
+                          {{ item.probe_duration_seconds }} s
+                        {% else %}
+                          -
+                        {% endif %}
+                      </td>
+                      <td>
+                        {% if item.availability_5m is not none %}
+                          {{ item.availability_5m }} %
+                        {% else %}
+                          -
+                        {% endif %}
+                      </td>
+                      <td>
+                        <form action="/ui/remove" method="post">
+                          <input type="hidden" name="target_type" value="{{ target_type }}">
+                          <input type="hidden" name="target" value="{{ item.value }}">
+                          <button type="submit" class="delete-btn">Löschen</button>
+                        </form>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <p>Keine Targets vorhanden.</p>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+</body>
+</html>

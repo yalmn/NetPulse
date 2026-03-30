@@ -1,0 +1,33 @@
+modules:
+  http_2xx:
+    prober: http
+    timeout: 5s
+    http:
+      method: GET
+      preferred_ip_protocol: "ip4"
+      ip_protocol_fallback: true
+      valid_status_codes: []   
+      follow_redirects: true
+      fail_if_ssl: false
+      fail_if_not_ssl: false
+
+  https_2xx:
+    prober: http
+    timeout: 5s
+    http:
+      method: GET
+      preferred_ip_protocol: "ip4"
+      ip_protocol_fallback: true
+      valid_status_codes: []
+      follow_redirects: true
+      fail_if_ssl: false
+      fail_if_not_ssl: true    
+      tls_config:
+        insecure_skip_verify: false
+
+  icmp:
+    prober: icmp
+    timeout: 5s
+    icmp:
+      preferred_ip_protocol: "ip4"
+      ip_protocol_fallback: true
