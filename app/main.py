@@ -10,6 +10,8 @@ import ipaddress
 import json
 import re
 import httpx
+import whois
+import dns.resolver
 
 app = FastAPI(title="Monitoring Target API")
 
@@ -368,6 +370,85 @@ async def manual_reload():
         "message": "Prometheus reloaded successfully",
         "prometheus_reloaded": True,
     }
+
+
+def extract_domain(target: str) -> str:
+    parsed = urlparse(target)
+    hostname = parsed.hostname if parsed.hostname else target
+    return hostname
+
+
+def do_whois(domain: str) -> dict:
+    try:
+        w = whois.whois(domain)
+        created = w.creation_date
+        if isinstance(created, list):
+            created = created[0]
+        expiry = w.expiration_date
+        if isinstance(expiry, list):
+            expiry = expiry[0]
+        return {
+            "domain": domain,
+            "registrar": w.registrar or "-",
+            "created": str(created) if created else "-",
+            "expires": str(expiry) if expiry else "-",
+            "name_servers": ", ".join(sorted(set(s.lower() for s in w.name_servers))) if w.name_servers else "-",
+            "status": w.status[0] if isinstance(w.status, list) and w.status else (w.status or "-"),
+        }
+    except Exception as e:
+        return {
+            "domain": domain,
+            "registrar": "-",
+            "created": "-",
+            "expires": "-",
+            "name_servers": "-",
+            "status": f"Error: {e}",
+        }
+
+
+def do_nslookup(domain: str) -> list[dict]:
+    results = []
+    for rdtype in ["A", "AAAA", "MX", "NS", "CNAME", "TXT"]:
+        try:
+            answers = dns.resolver.resolve(domain, rdtype)
+            for rdata in answers:
+                value = str(rdata)
+                if rdtype == "MX":
+                    value = f"{rdata.preference} {rdata.exchange}"
+                results.append({"domain": domain, "type": rdtype, "value": value})
+        except Exception:
+            pass
+    if not results:
+        results.append({"domain": domain, "type": "-", "value": "No records found"})
+    return results
+
+
+def collect_all_domains() -> list[str]:
+    domains = []
+    seen = set()
+    for target_type, file_path in TARGET_FILES.items():
+        data = load_targets(file_path)
+        for target in data.get("targets", []):
+            domain = extract_domain(target)
+            if domain not in seen:
+                seen.add(domain)
+                domains.append(domain)
+    return domains
+
+
+@app.get("/api/whois")
+def api_whois_all():
+    domains = collect_all_domains()
+    return [do_whois(d) for d in domains]
+
+
+@app.get("/api/nslookup")
+def api_nslookup_all():
+    domains = collect_all_domains()
+    results = []
+    for d in domains:
+        results.extend(do_nslookup(d))
+    return results
 
 
 @app.get("/ui")
