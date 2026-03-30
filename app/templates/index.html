@@ -3,84 +3,86 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Monitoring Targets</title>
+  <title>Monitoring - Target Verwaltung</title>
   <meta http-equiv="refresh" content="15">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', path='/style.css') }}">
 </head>
 <body>
-  <div class="layout">
 
-    <!-- Sidebar -->
-    <aside class="sidebar">
-      <div class="sidebar-brand">
-        <h1>Monitoring</h1>
-        <span>Target Management</span>
-      </div>
-      <ul class="sidebar-nav">
+  <!-- Top Navigation -->
+  <nav class="topbar">
+    <div class="topbar-left">
+      <a href="/ui" class="topbar-brand">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+        </svg>
+        Monitoring
+      </a>
+      <ul class="topbar-nav">
         <li>
           <a href="/ui" class="active">
-            <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7" />
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h7"/>
             </svg>
             Targets
           </a>
         </li>
         <li>
-          <a href="http://localhost:3000/d/blackbox-monitoring-overview/blackbox-monitoring-overview?orgId=1&from=now-1h&to=now&timezone=browser&var-instance=$__all&refresh=10s" target="_blank">
-            <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
-            </svg>
-            Grafana Dashboard
-          </a>
-        </li>
-        <li>
           <a href="http://localhost:9090/targets" target="_blank">
-            <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M4 7v10c0 2 1 3 3 3h10c2 0 3-1 3-3V7c0-2-1-3-3-3H7c-2 0-3 1-3 3z" />
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6M12 9v6" />
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M12 5l7 7-7 7"/>
             </svg>
             Prometheus
           </a>
         </li>
         <li>
           <a href="/docs" target="_blank">
-            <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
             </svg>
-            API Docs
+            API
           </a>
         </li>
       </ul>
-      <div class="sidebar-footer">
-        Monitoring POC v1.0
+    </div>
+    <div class="topbar-right">
+      <a
+        href="http://localhost:3000/d/blackbox-monitoring-overview/blackbox-monitoring-overview?orgId=1&from=now-1h&to=now&timezone=browser&var-instance=$__all&refresh=10s"
+        target="_blank"
+        class="btn btn-grafana"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/>
+        </svg>
+        Grafana Dashboard
+      </a>
+    </div>
+  </nav>
+
+  <!-- Content -->
+  <div class="container">
+
+    <div class="page-header">
+      <h2>Target Verwaltung</h2>
+      <p>Monitoring-Targets fuer HTTP, HTTPS und ICMP hinzufuegen und verwalten.</p>
+    </div>
+
+    {% if message %}
+      <div class="alert success">{{ message }}</div>
+    {% endif %}
+
+    {% if error %}
+      <div class="alert error">{{ error }}</div>
+    {% endif %}
+
+    <!-- Add Target Form -->
+    <div class="card">
+      <div class="card-header-bar">
+        <h3>Neues Target</h3>
       </div>
-    </aside>
-
-    <!-- Main Content -->
-    <main class="main">
-      <div class="page-header">
-        <h2>Target Verwaltung</h2>
-        <p>HTTP, HTTPS und ICMP Monitoring-Targets verwalten</p>
-      </div>
-
-      {% if message %}
-        <div class="alert success">{{ message }}</div>
-      {% endif %}
-
-      {% if error %}
-        <div class="alert error">{{ error }}</div>
-      {% endif %}
-
-      <!-- Add Target -->
-      <div class="card">
-        <div class="card-header">
-          <h3>Neues Target hinzufuegen</h3>
-        </div>
+      <div class="card-body">
         <form action="/ui/add" method="post" class="add-form">
-          <div class="form-group">
+          <div class="form-field type-field">
             <label for="target_type">Typ</label>
             <select name="target_type" id="target_type" required>
               <option value="http">HTTP / HTTPS</option>
@@ -88,103 +90,92 @@
               <option value="icmp">ICMP (Ping)</option>
             </select>
           </div>
-          <div class="form-group">
-            <label for="target">Target</label>
+          <div class="form-field target-field">
+            <label for="target">Ziel-Adresse</label>
             <input
               type="text"
               name="target"
               id="target"
-              placeholder="z.B. https://example.com oder 8.8.8.8"
+              placeholder="https://example.com oder 8.8.8.8"
               required
             >
           </div>
           <button type="submit" class="btn btn-primary">Hinzufuegen</button>
         </form>
       </div>
+    </div>
 
-      <!-- Grafana Button -->
-      <div class="card" style="text-align: center; padding: 16px;">
-        <a
-          href="http://localhost:3000/d/blackbox-monitoring-overview/blackbox-monitoring-overview?orgId=1&from=now-1h&to=now&timezone=browser&var-instance=$__all&refresh=10s"
-          target="_blank"
-          class="btn btn-grafana"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
-          </svg>
-          Grafana Dashboard oeffnen
-        </a>
-      </div>
-
-      <!-- Target Lists -->
-      <div class="grid">
-        {% for target_type, data in targets_data.items() %}
-          <div class="card">
-            <div class="card-header">
-              <h3>{{ target_type|upper }} Targets</h3>
-              <span class="badge">{{ data.targets|length }} Eintraege</span>
-            </div>
-
-            {% if data.targets %}
-              <div class="table-wrap">
-                <table class="targets-table">
-                  <thead>
-                    <tr>
-                      <th>Target</th>
-                      <th>Status</th>
-                      <th>Dauer</th>
-                      <th>Verfuegbarkeit (5m)</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for item in data.targets %}
-                      <tr>
-                        <td>
-                          <div class="target-cell">
-                            <span>{{ item.value }}</span>
-                            <a class="small-link" href="{{ item.prometheus_link }}" target="_blank">In Prometheus anzeigen</a>
-                          </div>
-                        </td>
-                        <td>
-                          <span class="status-badge status-{{ item.status }}">
-                            {{ item.status }}
-                          </span>
-                        </td>
-                        <td class="duration">
-                          {% if item.probe_duration_seconds is not none %}
-                            {{ item.probe_duration_seconds }} s
-                          {% else %}
-                            &mdash;
-                          {% endif %}
-                        </td>
-                        <td class="duration">
-                          {% if item.availability_5m is not none %}
-                            {{ item.availability_5m }}%
-                          {% else %}
-                            &mdash;
-                          {% endif %}
-                        </td>
-                        <td>
-                          <form action="/ui/remove" method="post">
-                            <input type="hidden" name="target_type" value="{{ target_type }}">
-                            <input type="hidden" name="target" value="{{ item.value }}">
-                            <button type="submit" class="btn btn-danger">Entfernen</button>
-                          </form>
-                        </td>
-                      </tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-              </div>
-            {% else %}
-              <div class="empty-state">Keine Targets vorhanden.</div>
-            {% endif %}
+    <!-- Target Lists -->
+    {% for target_type, data in targets_data.items() %}
+      <div class="card">
+        <div class="card-header-bar">
+          <h3>{{ target_type|upper }}</h3>
+          <span class="count-badge">{{ data.targets|length }}</span>
+        </div>
+        {% if data.targets %}
+          <div class="table-wrap">
+            <table class="targets-table">
+              <thead>
+                <tr>
+                  <th>Target</th>
+                  <th>Status</th>
+                  <th>Dauer</th>
+                  <th>Verfuegbarkeit 5 min</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in data.targets %}
+                  <tr>
+                    <td>
+                      <div class="target-cell">
+                        <span class="target-value">{{ item.value }}</span>
+                        <a class="target-link" href="{{ item.prometheus_link }}" target="_blank">Prometheus &rarr;</a>
+                      </div>
+                    </td>
+                    <td>
+                      <span class="status-badge status-{{ item.status }}">
+                        <span class="status-dot"></span>
+                        {{ item.status }}
+                      </span>
+                    </td>
+                    <td>
+                      <span class="mono">
+                        {% if item.probe_duration_seconds is not none %}
+                          {{ item.probe_duration_seconds }}&thinsp;s
+                        {% else %}
+                          &mdash;
+                        {% endif %}
+                      </span>
+                    </td>
+                    <td>
+                      <span class="mono">
+                        {% if item.availability_5m is not none %}
+                          {{ item.availability_5m }}&thinsp;%
+                        {% else %}
+                          &mdash;
+                        {% endif %}
+                      </span>
+                    </td>
+                    <td>
+                      <form action="/ui/remove" method="post">
+                        <input type="hidden" name="target_type" value="{{ target_type }}">
+                        <input type="hidden" name="target" value="{{ item.value }}">
+                        <button type="submit" class="btn btn-danger">Entfernen</button>
+                      </form>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
           </div>
-        {% endfor %}
+        {% else %}
+          <div class="empty-state">Keine Targets vorhanden.</div>
+        {% endif %}
       </div>
-    </main>
+    {% endfor %}
 
   </div>
+
 </body>
 </html>
