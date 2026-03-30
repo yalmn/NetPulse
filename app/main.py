@@ -472,7 +472,11 @@ async def ui_add_target(
     target: str = Form(...),
 ):
     try:
-        request_data = SingleTargetRequest(type=target_type, target=target)
+        actual_type = target_type
+        if target_type == "http" and target.strip().startswith("https://"):
+            actual_type = "https"
+
+        request_data = SingleTargetRequest(type=actual_type, target=target)
         validate_by_type(request_data.type, request_data.target)
 
         current_data = load_targets(TARGET_FILES[request_data.type])
