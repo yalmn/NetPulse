@@ -92,35 +92,35 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "probe_http_duration_seconds{phase=\"resolve\", instance=~\"$instance\"}",
+          "expr": "probe_http_duration_seconds{phase=\"resolve\", instance=~\"$instance\"} and on(instance) probe_success{instance=~\"$instance\"}",
           "legendFormat": "DNS Resolve - {{instance}}",
           "range": true,
           "refId": "A"
         },
         {
           "editorMode": "code",
-          "expr": "probe_http_duration_seconds{phase=\"connect\", instance=~\"$instance\"}",
+          "expr": "probe_http_duration_seconds{phase=\"connect\", instance=~\"$instance\"} and on(instance) probe_success{instance=~\"$instance\"}",
           "legendFormat": "Connect - {{instance}}",
           "range": true,
           "refId": "B"
         },
         {
           "editorMode": "code",
-          "expr": "probe_http_duration_seconds{phase=\"tls\", instance=~\"$instance\"}",
+          "expr": "probe_http_duration_seconds{phase=\"tls\", instance=~\"$instance\"} and on(instance) probe_success{instance=~\"$instance\"}",
           "legendFormat": "TLS - {{instance}}",
           "range": true,
           "refId": "C"
         },
         {
           "editorMode": "code",
-          "expr": "probe_http_duration_seconds{phase=\"processing\", instance=~\"$instance\"}",
+          "expr": "probe_http_duration_seconds{phase=\"processing\", instance=~\"$instance\"} and on(instance) probe_success{instance=~\"$instance\"}",
           "legendFormat": "Processing - {{instance}}",
           "range": true,
           "refId": "D"
         },
         {
           "editorMode": "code",
-          "expr": "probe_http_duration_seconds{phase=\"transfer\", instance=~\"$instance\"}",
+          "expr": "probe_http_duration_seconds{phase=\"transfer\", instance=~\"$instance\"} and on(instance) probe_success{instance=~\"$instance\"}",
           "legendFormat": "Transfer - {{instance}}",
           "range": true,
           "refId": "E"
@@ -155,7 +155,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "probe_duration_seconds{instance=~\"$instance\", job=~\"blackbox_http|blackbox_https\"}",
+          "expr": "probe_duration_seconds{instance=~\"$instance\", job=~\"blackbox_http|blackbox_https\"} and on(instance) probe_success{instance=~\"$instance\"}",
           "legendFormat": "{{instance}}",
           "range": true,
           "refId": "A"
@@ -198,7 +198,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "probe_duration_seconds{instance=~\"$instance\", job=\"blackbox_icmp\"}",
+          "expr": "probe_duration_seconds{instance=~\"$instance\", job=\"blackbox_icmp\"} and on(instance) probe_success{instance=~\"$instance\"}",
           "legendFormat": "{{instance}}",
           "range": true,
           "refId": "A"
