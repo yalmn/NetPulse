@@ -93,4 +93,4 @@ bash uninstall.sh
 
 ## Lizenz
 
-MIT
+[MIT](./LICENSE)
