@@ -340,7 +340,7 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Test-Monitor",
+  "title": "__DASHBOARD_TITLE__",
   "uid": "blackbox-monitoring-overview",
   "version": 1,
   "weekStart": ""

@@ -110,9 +110,9 @@ reset_targets() {
 apply_dashboard_title() {
     source .env
     local title="${DASHBOARD_TITLE:-Monitoring Dashboard}"
-    sed_inplace "s/__DASHBOARD_TITLE__/${title}/g" grafana/provisioning/dashboards/monitor-dashboard.json
-    # Falls bereits ein anderer Titel gesetzt war, auch diesen ersetzen
-    # Beim naechsten Install wird das JSON aus git wieder den Platzhalter haben
+    local dashboard="grafana/provisioning/dashboards/monitor-dashboard.json"
+    # Ersetzt jeden Wert im "title"-Feld (Platzhalter oder vorheriger Name)
+    sed_inplace "s/\"title\": \"[^\"]*\",$/\"title\": \"${title}\",/" "$dashboard"
     info "Dashboard-Titel gesetzt: ${title}"
 }
 
