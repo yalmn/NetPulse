@@ -93,7 +93,7 @@ setup_env() {
         echo ""
         read -rp "Dashboard-Name [Monitoring Dashboard]: " custom_title
         custom_title="${custom_title:-Monitoring Dashboard}"
-        sed_inplace "s/^DASHBOARD_TITLE=.*/DASHBOARD_TITLE=${custom_title}/" .env
+        sed_inplace "s/^DASHBOARD_TITLE=.*/DASHBOARD_TITLE=\"${custom_title}\"/" .env
         info "Dashboard-Name: ${custom_title}"
     fi
 }
