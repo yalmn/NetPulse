@@ -81,7 +81,7 @@ Verfuegbare Variablen:
 | `GRAFANA_PORT`     | 3000     | Port von Grafana         |
 | `BLACKBOX_PORT`    | 9115     | Port des Blackbox Exporter |
 | `GF_ADMIN_USER`    | admin    | Grafana Admin-Benutzername |
-| `GF_ADMIN_PASSWORD`| admin    | Grafana Admin-Passwort   |
+| `GF_ADMIN_PASSWORD`| *generiert* | Grafana Admin-Passwort (wird bei Installation erzeugt) |
 
 ## Nutzung
 
@@ -90,7 +90,7 @@ Nach dem Start sind folgende Oberflaechen erreichbar:
 - **Web-UI:** http://localhost:8000/ui
 - **REST-API:** http://localhost:8000/docs
 - **Prometheus:** http://localhost:9090
-- **Grafana:** http://localhost:3000 (Login: admin/admin)
+- **Grafana:** http://localhost:3000 (Passwort wird bei Installation generiert, siehe `.env`)
 
 ### REST-API Beispiele
 

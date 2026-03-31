@@ -53,13 +53,26 @@ setup_repo() {
     cd "$INSTALL_DIR"
 }
 
+# --- Sicheres Passwort generieren ---
+generate_password() {
+    # 24 Zeichen, alphanumerisch + Sonderzeichen
+    if command -v openssl &>/dev/null; then
+        openssl rand -base64 18
+    else
+        head -c 18 /dev/urandom | base64
+    fi
+}
+
 # --- .env erstellen ---
 setup_env() {
     if [ -f ".env" ]; then
         info ".env existiert bereits. Wird nicht ueberschrieben."
     else
         cp .env.example .env
-        info ".env aus .env.example erstellt."
+        # Sicheres Grafana-Passwort generieren
+        GF_GENERATED_PW=$(generate_password)
+        sed -i"" "s/^GF_ADMIN_PASSWORD=.*/GF_ADMIN_PASSWORD=${GF_GENERATED_PW}/" .env
+        info ".env erstellt mit generiertem Grafana-Passwort."
     fi
 }
 
@@ -79,7 +92,11 @@ start_services() {
     info "  Prometheus: http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo 'localhost'):${PROMETHEUS_PORT:-9090}"
     info "  Grafana:    http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo 'localhost'):${GRAFANA_PORT:-3000}"
     echo ""
-    info "Grafana Login: admin / admin (Standard)"
+    info "Grafana Login:"
+    info "  User:     ${GF_ADMIN_USER:-admin}"
+    info "  Passwort: ${GF_ADMIN_PASSWORD}"
+    warn "Bitte Passwort notieren! Es wird nur einmalig angezeigt."
+    warn "Zum Aendern: GF_ADMIN_PASSWORD in .env anpassen und 'docker compose up -d' ausfuehren."
     echo ""
 }
 
