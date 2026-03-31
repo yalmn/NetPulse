@@ -55,11 +55,11 @@ setup_repo() {
 
 # --- Sicheres Passwort generieren ---
 generate_password() {
-    # 24 Zeichen, alphanumerisch + Sonderzeichen
+    # 24 Zeichen, nur alphanumerisch (sed-sicher, keine Sonderzeichen)
     if command -v openssl &>/dev/null; then
-        openssl rand -base64 18
+        openssl rand -hex 12
     else
-        head -c 18 /dev/urandom | base64
+        head -c 12 /dev/urandom | xxd -p
     fi
 }
 
