@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ============================================================
+# Monitoring POC - Automatischer Installer
+# ============================================================
+
+REPO_URL="https://github.com/<user>/monitoring-poc.git"
+INSTALL_DIR="monitoring-poc"
+
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+info()  { echo -e "${GREEN}[INFO]${NC}  $*"; }
+warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
+error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
+
+# --- Docker pruefen / installieren ---
+check_docker() {
+    if command -v docker &>/dev/null; then
+        info "Docker ist bereits installiert: $(docker --version)"
+    else
+        warn "Docker nicht gefunden. Wird installiert..."
+        curl -fsSL https://get.docker.com | sh
+        sudo systemctl enable --now docker
+        info "Docker wurde installiert."
+    fi
+
+    if ! docker compose version &>/dev/null; then
+        error "Docker Compose Plugin nicht gefunden. Bitte manuell installieren."
+    fi
+
+    info "Docker Compose verfuegbar: $(docker compose version --short)"
+}
+
+# --- Repo klonen (falls nicht bereits im Verzeichnis) ---
+setup_repo() {
+    if [ -f "docker-compose.yml" ]; then
+        info "Bereits im Projektverzeichnis."
+        return
+    fi
+
+    if [ -d "$INSTALL_DIR" ]; then
+        info "Verzeichnis '$INSTALL_DIR' existiert bereits. Wird verwendet."
+        cd "$INSTALL_DIR"
+        return
+    fi
+
+    info "Repository wird geklont..."
+    git clone "$REPO_URL" "$INSTALL_DIR"
+    cd "$INSTALL_DIR"
+}
+
+# --- .env erstellen ---
+setup_env() {
+    if [ -f ".env" ]; then
+        info ".env existiert bereits. Wird nicht ueberschrieben."
+    else
+        cp .env.example .env
+        info ".env aus .env.example erstellt."
+    fi
+}
+
+# --- Services starten ---
+start_services() {
+    info "Services werden gebaut und gestartet..."
+    docker compose up -d --build
+
+    echo ""
+    info "========================================"
+    info " Monitoring POC erfolgreich installiert!"
+    info "========================================"
+    echo ""
+    info "Erreichbare Services:"
+    info "  Web-UI:     http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo 'localhost'):${APP_PORT:-8000}/ui"
+    info "  REST-API:   http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo 'localhost'):${APP_PORT:-8000}/docs"
+    info "  Prometheus: http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo 'localhost'):${PROMETHEUS_PORT:-9090}"
+    info "  Grafana:    http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo 'localhost'):${GRAFANA_PORT:-3000}"
+    echo ""
+    info "Grafana Login: admin / admin (Standard)"
+    echo ""
+}
+
+# --- Hauptprogramm ---
+main() {
+    echo ""
+    info "Monitoring POC Installer"
+    info "========================"
+    echo ""
+
+    check_docker
+    setup_repo
+    setup_env
+
+    # .env laden fuer Port-Ausgabe
+    if [ -f ".env" ]; then
+        set -a
+        source .env
+        set +a
+    fi
+
+    start_services
+}
+
+main
