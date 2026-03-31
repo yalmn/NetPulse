@@ -63,20 +63,28 @@ generate_password() {
     fi
 }
 
+# --- sed plattformunabhaengig ---
+sed_inplace() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' "$@"
+    else
+        sed -i "$@"
+    fi
+}
+
 # --- .env erstellen ---
 setup_env() {
-    if [ -f ".env" ]; then
-        info ".env existiert bereits. Wird nicht ueberschrieben."
-    else
+    if [ ! -f ".env" ]; then
         cp .env.example .env
-        # Sicheres Grafana-Passwort generieren
+        info ".env aus .env.example erstellt."
+    fi
+
+    # Passwort generieren falls leer oder nicht gesetzt
+    source .env
+    if [ -z "${GF_ADMIN_PASSWORD:-}" ]; then
         GF_GENERATED_PW=$(generate_password)
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' "s/^GF_ADMIN_PASSWORD=.*/GF_ADMIN_PASSWORD=${GF_GENERATED_PW}/" .env
-        else
-            sed -i "s/^GF_ADMIN_PASSWORD=.*/GF_ADMIN_PASSWORD=${GF_GENERATED_PW}/" .env
-        fi
-        info ".env erstellt mit generiertem Grafana-Passwort."
+        sed_inplace "s/^GF_ADMIN_PASSWORD=.*/GF_ADMIN_PASSWORD=${GF_GENERATED_PW}/" .env
+        info "Grafana-Passwort wurde automatisch generiert."
     fi
 }
 
