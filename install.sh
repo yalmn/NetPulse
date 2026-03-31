@@ -71,7 +71,11 @@ setup_env() {
         cp .env.example .env
         # Sicheres Grafana-Passwort generieren
         GF_GENERATED_PW=$(generate_password)
-        sed -i"" "s/^GF_ADMIN_PASSWORD=.*/GF_ADMIN_PASSWORD=${GF_GENERATED_PW}/" .env
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' "s/^GF_ADMIN_PASSWORD=.*/GF_ADMIN_PASSWORD=${GF_GENERATED_PW}/" .env
+        else
+            sed -i "s/^GF_ADMIN_PASSWORD=.*/GF_ADMIN_PASSWORD=${GF_GENERATED_PW}/" .env
+        fi
         info ".env erstellt mit generiertem Grafana-Passwort."
     fi
 }
