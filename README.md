@@ -39,7 +39,7 @@ Login-Daten (User + Passwort) werden einmalig in der Konsole ausgegeben.
 Auf einer frischen VM geht auch:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yalmn/NetPulse/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/yalmn/NetPulse/master/install.sh | bash
 ```
 
 ## Konfiguration
