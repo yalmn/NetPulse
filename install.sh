@@ -86,6 +86,34 @@ setup_env() {
         sed_inplace "s/^GF_ADMIN_PASSWORD=.*/GF_ADMIN_PASSWORD=${GF_GENERATED_PW}/" .env
         info "Grafana-Passwort wurde automatisch generiert."
     fi
+
+    # Dashboard-Name abfragen falls noch Default
+    source .env
+    if [ "${DASHBOARD_TITLE:-}" = "Monitoring Dashboard" ] || [ -z "${DASHBOARD_TITLE:-}" ]; then
+        echo ""
+        read -rp "Dashboard-Name [Monitoring Dashboard]: " custom_title
+        custom_title="${custom_title:-Monitoring Dashboard}"
+        sed_inplace "s/^DASHBOARD_TITLE=.*/DASHBOARD_TITLE=${custom_title}/" .env
+        info "Dashboard-Name: ${custom_title}"
+    fi
+}
+
+# --- Target-Dateien zuruecksetzen ---
+reset_targets() {
+    for f in prometheus/targets/urls.json prometheus/targets/https_urls.json prometheus/targets/icmp_targets.json; do
+        echo '[]' > "$f"
+    done
+    info "Target-Dateien zurueckgesetzt (leer)."
+}
+
+# --- Dashboard-Titel setzen ---
+apply_dashboard_title() {
+    source .env
+    local title="${DASHBOARD_TITLE:-Monitoring Dashboard}"
+    sed_inplace "s/__DASHBOARD_TITLE__/${title}/g" grafana/provisioning/dashboards/monitor-dashboard.json
+    # Falls bereits ein anderer Titel gesetzt war, auch diesen ersetzen
+    # Beim naechsten Install wird das JSON aus git wieder den Platzhalter haben
+    info "Dashboard-Titel gesetzt: ${title}"
 }
 
 # --- Services starten ---
@@ -122,6 +150,8 @@ main() {
     check_docker
     setup_repo
     setup_env
+    reset_targets
+    apply_dashboard_title
 
     # .env laden fuer Port-Ausgabe
     if [ -f ".env" ]; then

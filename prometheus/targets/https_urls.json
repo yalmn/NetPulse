@@ -1,10 +1,1 @@
-[
-  {
-    "labels": {
-      "service": "tls-check"
-    },
-    "targets": [
-      "https://www.google.de"
-    ]
-  }
-]
+[]

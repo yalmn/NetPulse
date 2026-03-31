@@ -340,7 +340,7 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Blackbox Monitoring Overview",
+  "title": "__DASHBOARD_TITLE__",
   "uid": "blackbox-monitoring-overview",
   "version": 1,
   "weekStart": ""
