@@ -122,6 +122,9 @@ apply_dashboard_title() {
 
 # --- Services starten ---
 start_services() {
+    info "Bestehende Container und Volumes werden entfernt..."
+    docker compose down -v 2>/dev/null || true
+
     info "Services werden gebaut und gestartet..."
     docker compose up -d --build
 
@@ -140,7 +143,7 @@ start_services() {
     info "  User:     ${GF_ADMIN_USER:-admin}"
     info "  Passwort: ${GF_ADMIN_PASSWORD}"
     warn "Bitte Passwort notieren! Es wird nur einmalig angezeigt."
-    warn "Zum Aendern: GF_ADMIN_PASSWORD in .env anpassen und 'docker compose up -d' ausfuehren."
+    warn "Zum Aendern: GF_ADMIN_PASSWORD in .env anpassen und './install.sh' erneut ausfuehren."
     echo ""
 }
 
