@@ -2,7 +2,7 @@
 
 HTTP-, HTTPS- und ICMP-Monitoring mit Web-UI, REST-API und Grafana-Dashboards.
 
-Targets lassen sich per Browser oder API verwalten. Prometheus uebernimmt die Metrik-Erfassung via Blackbox Exporter, Grafana die Visualisierung. Alles laeuft containerisiert und ist in unter einer Minute einsatzbereit.
+Targets lassen sich per Browser oder API verwalten. Prometheus übernimmt die Metrik-Erfassung via Blackbox Exporter, Grafana die Visualisierung. Alles läuft containerisiert und ist in unter einer Minute einsatzbereit.
 
 ## Stack
 
@@ -12,15 +12,15 @@ Targets lassen sich per Browser oder API verwalten. Prometheus uebernimmt die Me
 | Prometheus        | 9090 | Metrik-Erfassung                 |
 | Blackbox Exporter | 9115 | HTTP/HTTPS/ICMP Probes           |
 | Grafana           | 3000 | Dashboards                       |
-| nginx             | —    | Reverse Proxy mit Basic Auth     |
+| nginx             |      | Reverse Proxy mit Basic Auth     |
 
-Alle Services ausser Grafana (eigener Login) sind per HTTP Basic Auth geschuetzt. Die Credentials werden beim Setup automatisch generiert und gelten einheitlich fuer Web-UI, API, Prometheus und Blackbox Exporter.
+Alle Services ausser Grafana (eigener Login) sind per HTTP Basic Auth geschützt. Die Credentials werden beim Setup automatisch generiert und gelten einheitlich für Web-UI, API, Prometheus und Blackbox Exporter.
 
 ## Setup
 
 Voraussetzung: Docker + Docker Compose.
 
-**Wichtig:** Immer `install.sh` verwenden — nicht `docker compose up` direkt. Der Installer generiert Credentials, setzt den Dashboard-Titel und konfiguriert alles korrekt.
+**Wichtig:** Immer `install.sh` verwenden, nicht `docker compose up` direkt. Der Installer generiert Credentials, setzt den Dashboard-Titel und konfiguriert alles korrekt.
 
 ```bash
 git clone https://github.com/yalmn/NetPulse.git
@@ -29,9 +29,9 @@ bash install.sh
 ```
 
 Der Installer:
-1. Prueft/installiert Docker
+1. Prüft/installiert Docker
 2. Erstellt `.env` mit sicherem Passwort
-3. Fragt den gewuenschten Dashboard-Namen ab
+3. Fragt den gewünschten Dashboard-Namen ab
 4. Baut und startet alle Container
 
 Login-Daten (User + Passwort) werden einmalig in der Konsole ausgegeben.
@@ -70,7 +70,7 @@ curl -u admin:PASSWORT -X POST http://localhost:8000/targets/add \
 # Alle Targets abfragen
 curl -u admin:PASSWORT http://localhost:8000/targets
 
-# Target loeschen
+# Target löschen
 curl -u admin:PASSWORT -X DELETE http://localhost:8000/targets/remove \
   -H "Content-Type: application/json" \
   -d '{"type": "http", "target": "http://example.com"}'
@@ -80,7 +80,7 @@ Interaktive API-Docs: http://localhost:8000/docs (Login im Browser-Dialog)
 
 ## Reinstall / Deinstallation
 
-`install.sh` erneut ausfuehren setzt alles zurueck (Volumes, Targets, Passwort).
+`install.sh` erneut ausführen setzt alles zurück (Volumes, Targets, Passwort).
 
 Komplett entfernen:
 
