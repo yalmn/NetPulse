@@ -5,7 +5,7 @@ set -euo pipefail
 # NetPulse - Automatischer Installer
 # ============================================================
 
-REPO_URL="https://github.com/<user>/netpulse.git"
+REPO_URL="https://github.com/yalmn/netpulse.git"
 INSTALL_DIR="netpulse"
 
 GREEN='\033[0;32m'
@@ -91,7 +91,11 @@ setup_env() {
     source .env
     if [ "${DASHBOARD_TITLE:-}" = "Monitoring Dashboard" ] || [ -z "${DASHBOARD_TITLE:-}" ]; then
         echo ""
-        read -rp "Dashboard-Name [Monitoring Dashboard]: " custom_title
+        if [ -t 0 ]; then
+            read -rp "Dashboard-Name [Monitoring Dashboard]: " custom_title
+        else
+            read -rp "Dashboard-Name [Monitoring Dashboard]: " custom_title < /dev/tty || custom_title=""
+        fi
         custom_title="${custom_title:-Monitoring Dashboard}"
         sed_inplace "s/^DASHBOARD_TITLE=.*/DASHBOARD_TITLE=\"${custom_title}\"/" .env
         info "Dashboard-Name: ${custom_title}"
