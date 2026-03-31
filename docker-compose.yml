@@ -3,8 +3,6 @@ services:
     image: prom/prometheus:latest
     container_name: prometheus
     restart: unless-stopped
-    ports:
-      - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/targets:/etc/prometheus/targets:ro
@@ -18,8 +16,6 @@ services:
     image: prom/blackbox-exporter:latest
     container_name: blackbox-exporter
     restart: unless-stopped
-    ports:
-      - "${BLACKBOX_PORT:-9115}:9115"
     volumes:
       - ./blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
     command:
@@ -49,12 +45,26 @@ services:
     build: ./app
     container_name: netpulse-api
     restart: unless-stopped
-    ports:
-      - "${APP_PORT:-8000}:8000"
     volumes:
       - ./prometheus/targets:/data
     depends_on:
       - prometheus
+
+  nginx:
+    build: ./nginx
+    container_name: netpulse-nginx
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8000}:8000"
+      - "${PROMETHEUS_PORT:-9090}:9090"
+      - "${BLACKBOX_PORT:-9115}:9115"
+    environment:
+      - BASIC_AUTH_USER=${GF_ADMIN_USER:-admin}
+      - BASIC_AUTH_PASSWORD=${GF_ADMIN_PASSWORD:?GF_ADMIN_PASSWORD muss in .env gesetzt sein}
+    depends_on:
+      - app
+      - prometheus
+      - blackbox
 
 volumes:
   grafana-storage:
