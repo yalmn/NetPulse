@@ -33,8 +33,9 @@ Ein leichtgewichtiges Monitoring-System zur Ueberwachung von HTTP-, HTTPS- und I
 - HTTP, HTTPS und ICMP Monitoring
 - Live-Status (Up/Down), Antwortzeiten und Verfuegbarkeit (5 Min.)
 - WHOIS- und DNS-Lookup fuer alle Targets
-- Vorkonfiguriertes Grafana-Dashboard
+- Konfigurierbarer Dashboard-Name bei Installation
 - Automatisches Prometheus-Reload bei Target-Aenderungen
+- Sicheres Grafana-Passwort wird automatisch generiert
 
 ## Quick Start
 
@@ -47,12 +48,16 @@ Ein leichtgewichtiges Monitoring-System zur Ueberwachung von HTTP-, HTTPS- und I
 ```bash
 git clone https://github.com/<user>/netpulse.git
 cd netpulse
-docker compose up -d --build
+bash install.sh
 ```
 
-### Automatischer Installer (VM)
+Der Installer:
+1. Prueft ob Docker installiert ist (installiert es bei Bedarf)
+2. Erstellt `.env` mit automatisch generiertem Grafana-Passwort
+3. Fragt den gewuenschten Dashboard-Namen ab
+4. Startet alle Services via Docker Compose
 
-Fuer eine schnelle Installation auf einer beliebigen VM:
+### Automatischer Installer (VM)
 
 ```bash
 # Privates Repo (SSH-Zugang noetig)
@@ -62,26 +67,20 @@ git clone git@github.com:<user>/netpulse.git && cd netpulse && bash install.sh
 curl -fsSL https://raw.githubusercontent.com/<user>/netpulse/main/install.sh | bash
 ```
 
-Der Installer prueft ob Docker installiert ist, installiert es bei Bedarf und startet alle Services automatisch.
-
 ## Konfiguration
 
-Kopiere `.env.example` nach `.env` und passe die Werte bei Bedarf an:
+Die Konfiguration erfolgt ueber `.env` (wird bei `install.sh` automatisch erstellt).
 
-```bash
-cp .env.example .env
-```
-
-Verfuegbare Variablen:
-
-| Variable           | Standard | Beschreibung             |
-|--------------------|----------|--------------------------|
-| `APP_PORT`         | 8000     | Port der FastAPI App     |
-| `PROMETHEUS_PORT`  | 9090     | Port von Prometheus      |
-| `GRAFANA_PORT`     | 3000     | Port von Grafana         |
-| `BLACKBOX_PORT`    | 9115     | Port des Blackbox Exporter |
-| `GF_ADMIN_USER`    | admin    | Grafana Admin-Benutzername |
-| `GF_ADMIN_PASSWORD`| *generiert* | Grafana Admin-Passwort (wird bei Installation erzeugt) |
+| Variable              | Standard            | Beschreibung                        |
+|-----------------------|---------------------|-------------------------------------|
+| `COMPOSE_PROJECT_NAME`| netpulse            | Projektname in Docker               |
+| `APP_PORT`            | 8000                | Port der FastAPI App                |
+| `PROMETHEUS_PORT`     | 9090                | Port von Prometheus                 |
+| `GRAFANA_PORT`        | 3000                | Port von Grafana                    |
+| `BLACKBOX_PORT`       | 9115                | Port des Blackbox Exporter          |
+| `GF_ADMIN_USER`       | admin               | Grafana Admin-Benutzername          |
+| `GF_ADMIN_PASSWORD`   | *automatisch generiert* | Grafana Admin-Passwort          |
+| `DASHBOARD_TITLE`     | Monitoring Dashboard| Name des Grafana-Dashboards         |
 
 ## Nutzung
 
@@ -90,7 +89,7 @@ Nach dem Start sind folgende Oberflaechen erreichbar:
 - **Web-UI:** http://localhost:8000/ui
 - **REST-API:** http://localhost:8000/docs
 - **Prometheus:** http://localhost:9090
-- **Grafana:** http://localhost:3000 (Passwort wird bei Installation generiert, siehe `.env`)
+- **Grafana:** http://localhost:3000 (Passwort siehe `.env` oder Installer-Ausgabe)
 
 ### REST-API Beispiele
 
@@ -108,6 +107,13 @@ curl -X DELETE http://localhost:8000/targets/remove \
   -H "Content-Type: application/json" \
   -d '{"type": "http", "target": "http://example.com"}'
 ```
+
+## Reinstallation
+
+Bei erneuter Ausfuehrung von `install.sh` werden alle Services zurueckgesetzt:
+- Grafana-Volume wird entfernt (neues Passwort greift)
+- Alle Targets werden geleert
+- Dashboard-Name kann neu gewaehlt werden
 
 ## Deinstallation
 
