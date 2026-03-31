@@ -36,11 +36,14 @@ Der Installer:
 
 Login-Daten (User + Passwort) werden einmalig in der Konsole ausgegeben.
 
-Auf einer frischen VM geht auch:
+Auf einer frischen VM (Debian/Ubuntu):
 
 ```bash
+apt update && apt install -y curl git
 curl -fsSL https://raw.githubusercontent.com/yalmn/NetPulse/master/install.sh | bash
 ```
+
+Docker wird vom Installer automatisch installiert, falls nicht vorhanden. Python ist nicht nötig, da alles im Container läuft.
 
 ## Konfiguration
 
