@@ -47,7 +47,7 @@ services:
 
   app:
     build: ./app
-    container_name: monitoring-api
+    container_name: netpulse-api
     restart: unless-stopped
     ports:
       - "${APP_PORT:-8000}:8000"

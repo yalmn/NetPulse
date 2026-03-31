@@ -2,11 +2,11 @@
 set -euo pipefail
 
 # ============================================================
-# Monitoring POC - Automatischer Installer
+# NetPulse - Automatischer Installer
 # ============================================================
 
-REPO_URL="https://github.com/<user>/monitoring-poc.git"
-INSTALL_DIR="monitoring-poc"
+REPO_URL="https://github.com/<user>/netpulse.git"
+INSTALL_DIR="netpulse"
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -123,7 +123,7 @@ start_services() {
 
     echo ""
     info "========================================"
-    info " Monitoring POC erfolgreich installiert!"
+    info " NetPulse erfolgreich installiert!"
     info "========================================"
     echo ""
     info "Erreichbare Services:"
@@ -143,7 +143,7 @@ start_services() {
 # --- Hauptprogramm ---
 main() {
     echo ""
-    info "Monitoring POC Installer"
+    info "NetPulse Installer"
     info "========================"
     echo ""
 

@@ -267,7 +267,7 @@
           "root_selector": "",
           "source": "url",
           "type": "json",
-          "url": "http://monitoring-api:8000/api/whois",
+          "url": "http://netpulse-api:8000/api/whois",
           "url_options": { "method": "GET" }
         }
       ],
@@ -323,7 +323,7 @@
           "root_selector": "",
           "source": "url",
           "type": "json",
-          "url": "http://monitoring-api:8000/api/nslookup",
+          "url": "http://netpulse-api:8000/api/nslookup",
           "url_options": { "method": "GET" }
         }
       ],
@@ -340,7 +340,7 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "__DASHBOARD_TITLE__",
+  "title": "Test-Monitor",
   "uid": "blackbox-monitoring-overview",
   "version": 1,
   "weekStart": ""

@@ -1,4 +1,4 @@
-# Monitoring POC
+# NetPulse
 
 Ein leichtgewichtiges Monitoring-System zur Ueberwachung von HTTP-, HTTPS- und ICMP-Zielen. Targets werden ueber eine Web-UI oder REST-API verwaltet; Prometheus sammelt die Metriken via Blackbox Exporter und Grafana visualisiert die Ergebnisse.
 
@@ -45,8 +45,8 @@ Ein leichtgewichtiges Monitoring-System zur Ueberwachung von HTTP-, HTTPS- und I
 ### Installation
 
 ```bash
-git clone https://github.com/<user>/monitoring-poc.git
-cd monitoring-poc
+git clone https://github.com/<user>/netpulse.git
+cd netpulse
 docker compose up -d --build
 ```
 
@@ -56,10 +56,10 @@ Fuer eine schnelle Installation auf einer beliebigen VM:
 
 ```bash
 # Privates Repo (SSH-Zugang noetig)
-git clone git@github.com:<user>/monitoring-poc.git && cd monitoring-poc && bash install.sh
+git clone git@github.com:<user>/netpulse.git && cd netpulse && bash install.sh
 
 # Oeffentliches Repo (Einzeiler)
-curl -fsSL https://raw.githubusercontent.com/<user>/monitoring-poc/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/<user>/netpulse/main/install.sh | bash
 ```
 
 Der Installer prueft ob Docker installiert ist, installiert es bei Bedarf und startet alle Services automatisch.

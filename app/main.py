@@ -13,7 +13,7 @@ import httpx
 import whois
 import dns.resolver
 
-app = FastAPI(title="Monitoring Target API")
+app = FastAPI(title="NetPulse API")
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
@@ -280,7 +280,7 @@ async def build_ui_targets_data() -> dict:
 
 @app.get("/")
 def root():
-    return {"message": "Monitoring Target API is running"}
+    return {"message": "NetPulse API is running"}
 
 
 @app.get("/targets")

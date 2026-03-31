@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================
-# Monitoring POC - Deinstallation
+# NetPulse - Deinstallation
 # ============================================================
 
 GREEN='\033[0;32m'
@@ -16,7 +16,7 @@ error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 
 main() {
     echo ""
-    info "Monitoring POC Deinstallation"
+    info "NetPulse Deinstallation"
     info "=============================="
     echo ""
 
@@ -34,7 +34,7 @@ main() {
     docker compose down -v
 
     info "========================================"
-    info " Monitoring POC wurde deinstalliert."
+    info " NetPulse wurde deinstalliert."
     info "========================================"
     echo ""
     info "Das Projektverzeichnis wurde nicht geloescht."
