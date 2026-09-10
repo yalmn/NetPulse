@@ -184,6 +184,43 @@ body {
 .chart-tip .tip-row { display: flex; align-items: center; gap: 6px; margin-top: 3px; }
 .chart-tip .tip-val { margin-left: auto; font-family: var(--mono); color: var(--text); }
 
+/* ── Daueraufnahme: Setup ── */
+.form-field textarea {
+  padding: 8px 10px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); color: var(--text); font-size: 13px; font-family: var(--mono);
+  resize: vertical; line-height: 1.6;
+}
+.form-field textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(37,99,235,0.15); }
+.setup-row { display: flex; gap: 24px; align-items: flex-end; flex-wrap: wrap; margin-top: 14px; }
+.type-toggles { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.btn-danger-solid { background: var(--danger); color: #fff; }
+.btn-danger-solid:hover { background: #b91c1c; }
+.btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); }
+.btn-ghost:hover { background: var(--neutral-light); color: var(--text); }
+
+/* ── Session-Statistik ── */
+.session-stats { display: flex; flex-wrap: wrap; gap: 10px 28px; }
+.stat { display: flex; flex-direction: column; gap: 3px; }
+.stat-label { font-size: 10px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; }
+.stat-value { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ── Chart-Bloecke innerhalb einer Karte ── */
+.chart-block-inner { padding: 14px 0 4px; border-top: 1px solid var(--border); }
+.chart-block-inner:first-child { border-top: none; padding-top: 4px; }
+
+/* ── Erreichbarkeits-Zeitleiste ── */
+.uptime { display: flex; flex-direction: column; gap: 5px; }
+.uptime-row { display: flex; align-items: center; gap: 10px; }
+.uptime-label { width: 96px; flex-shrink: 0; font-size: 12px; color: var(--text-secondary); }
+.uptime-strip { display: flex; gap: 1px; flex: 1; height: 16px; overflow: hidden; }
+.uptime-cell { flex: 1; min-width: 2px; border-radius: 1px; }
+.uptime-up { background: var(--success); }
+.uptime-down { background: var(--danger); }
+.uptime-unknown { background: var(--neutral-light); }
+.uptime-legend { font-size: 11px; color: var(--text-secondary); font-weight: 400; text-transform: none; letter-spacing: 0; margin-left: 12px; }
+.uptime-legend .uptime-cell { display: inline-block; width: 10px; height: 10px; vertical-align: middle; margin: 0 3px 0 8px; }
+
 footer { text-align: center; color: var(--text-secondary); font-size: 12px; padding: 24px 0 8px; }
 footer a { color: var(--accent); text-decoration: none; }
 

@@ -3,7 +3,6 @@
 // - erlaubt ad-hoc Live-Messungen (Ping/HTTP/HTTPS) direkt gegen die Globalping-API (CORS aktiv)
 
 const API = "https://api.globalping.io/v1/measurements";
-const SVG_NS = "http://www.w3.org/2000/svg";
 
 const content = document.getElementById("content");
 const lastUpdated = document.getElementById("last-updated");
@@ -95,158 +94,13 @@ function buildSeries(target, history) {
   }));
 }
 
-function niceMax(v) {
-  if (!(v > 0)) return 10;
-  const pow = Math.pow(10, Math.floor(Math.log10(v)));
-  const n = v / pow;
-  const m = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
-  return m * pow;
-}
-
-function el(tag, attrs = {}, text) {
-  const e = document.createElementNS(SVG_NS, tag);
-  for (const [k, val] of Object.entries(attrs)) e.setAttribute(k, val);
-  if (text != null) e.textContent = text;
-  return e;
-}
-
-function fmtTime(ms, withDate) {
-  const d = new Date(ms);
-  const time = d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
-  return withDate ? d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" }) + " " + time : time;
-}
-
 function renderHistoryChart(host, target, history) {
-  const series = buildSeries(target.target, history);
-  const tAll = ((history && history.points) || []).map((p) => new Date(p.t).getTime());
-  if (tAll.length === 0) {
+  const hasData = history && Array.isArray(history.points) && history.points.length > 0;
+  if (!hasData) {
     host.innerHTML = '<div class="empty-state">Noch keine Verlaufsdaten – der geplante Job sammelt sie automatisch.</div>';
     return;
   }
-
-  const W = 760, H = 240;
-  const m = { top: 12, right: 76, bottom: 26, left: 46 };
-  const pw = W - m.left - m.right, ph = H - m.top - m.bottom;
-
-  const tMin = Math.min(...tAll), tMax = Math.max(...tAll);
-  const tSpan = tMax - tMin || 1;
-  const withDate = tSpan > 24 * 3600 * 1000;
-  let maxV = 0;
-  for (const s of series) for (const p of s.values) if (typeof p.v === "number") maxV = Math.max(maxV, p.v);
-  const yMax = niceMax(maxV);
-
-  const xOf = (t) => m.left + ((t - tMin) / tSpan) * pw;
-  const yOf = (v) => m.top + ph - (v / yMax) * ph;
-
-  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, class: "line-chart", role: "img" });
-
-  // Gridlines + Y-Achse
-  const ticks = 4;
-  for (let i = 0; i <= ticks; i++) {
-    const v = (yMax / ticks) * i;
-    const y = yOf(v);
-    svg.appendChild(el("line", { x1: m.left, y1: y, x2: m.left + pw, y2: y, class: "grid" }));
-    svg.appendChild(el("text", { x: m.left - 8, y: y + 3, class: "axis-label", "text-anchor": "end" }, Math.round(v) + ""));
-  }
-  // X-Achse: Start / Mitte / Ende
-  for (const t of [tMin, tMin + tSpan / 2, tMax]) {
-    svg.appendChild(el("text", { x: xOf(t), y: H - 8, class: "axis-label", "text-anchor": "middle" }, fmtTime(t, withDate)));
-  }
-  svg.appendChild(el("text", { x: 4, y: m.top + 4, class: "axis-label", "text-anchor": "start" }, "ms"));
-
-  // Linien (Luecken bei null segmentieren) + Endpunkt-Label (mit Kollisionsvermeidung)
-  const endLabels = [];
-  for (const s of series) {
-    let seg = [];
-    const flush = () => {
-      if (seg.length === 1) svg.appendChild(el("circle", { cx: xOf(seg[0].t), cy: yOf(seg[0].v), r: 2.5, fill: s.color }));
-      else if (seg.length > 1)
-        svg.appendChild(el("polyline", { points: seg.map((p) => `${xOf(p.t)},${yOf(p.v)}`).join(" "), fill: "none", stroke: s.color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
-      seg = [];
-    };
-    for (const p of s.values) (typeof p.v === "number" ? seg.push(p) : flush());
-    flush();
-    const last = [...s.values].reverse().find((p) => typeof p.v === "number");
-    if (last) {
-      svg.appendChild(el("circle", { cx: xOf(last.t), cy: yOf(last.v), r: 3, fill: s.color }));
-      endLabels.push({ code: s.code, color: s.color, y: yOf(last.v) });
-    }
-  }
-  // Labels vertikal entzerren (min. 11px Abstand) und farbigen Punkt als Identitaetsmarke setzen
-  endLabels.sort((a, b) => a.y - b.y);
-  const gap = 11;
-  for (let i = 1; i < endLabels.length; i++)
-    if (endLabels[i].y - endLabels[i - 1].y < gap) endLabels[i].y = endLabels[i - 1].y + gap;
-  const shift = Math.max(0, (endLabels.at(-1)?.y || 0) - (m.top + ph));
-  for (const lbl of endLabels) {
-    const ly = lbl.y - shift;
-    svg.appendChild(el("rect", { x: m.left + pw + 6, y: ly - 6, width: 6, height: 6, rx: 1, fill: lbl.color }));
-    svg.appendChild(el("text", { x: m.left + pw + 16, y: ly, class: "end-label" }, lbl.code));
-  }
-
-  // Hover-Crosshair
-  const crosshair = el("line", { class: "crosshair", y1: m.top, y2: m.top + ph, x1: -10, x2: -10, visibility: "hidden" });
-  svg.appendChild(crosshair);
-  const dots = series.map((s) => {
-    const c = el("circle", { r: 3.5, fill: s.color, stroke: isDark() ? "#1e293b" : "#fff", "stroke-width": 1.5, visibility: "hidden" });
-    svg.appendChild(c);
-    return c;
-  });
-  const capture = el("rect", { x: m.left, y: m.top, width: pw, height: ph, fill: "transparent" });
-  svg.appendChild(capture);
-
-  host.innerHTML = "";
-  host.appendChild(svg);
-
-  // Legende
-  const legend = document.createElement("div");
-  legend.className = "legend";
-  legend.innerHTML = series
-    .map((s) => `<span class="legend-item"><span class="legend-swatch" style="background:${s.color}"></span>${s.name}</span>`)
-    .join("");
-  host.appendChild(legend);
-
-  const tip = document.createElement("div");
-  tip.className = "chart-tip";
-  tip.style.display = "none";
-  host.appendChild(tip);
-
-  const nearestIndex = (t) => {
-    let best = 0, bd = Infinity;
-    tAll.forEach((tv, i) => { const d = Math.abs(tv - t); if (d < bd) { bd = d; best = i; } });
-    return best;
-  };
-
-  function onMove(evt) {
-    const rect = svg.getBoundingClientRect();
-    const sx = W / rect.width;
-    const px = (evt.clientX - rect.left) * sx;
-    const t = tMin + ((px - m.left) / pw) * tSpan;
-    const idx = nearestIndex(t);
-    const tv = tAll[idx];
-    const cx = xOf(tv);
-    crosshair.setAttribute("x1", cx); crosshair.setAttribute("x2", cx); crosshair.setAttribute("visibility", "visible");
-    const rows = [];
-    series.forEach((s, i) => {
-      const p = s.values[idx];
-      if (p && typeof p.v === "number") {
-        dots[i].setAttribute("cx", cx); dots[i].setAttribute("cy", yOf(p.v)); dots[i].setAttribute("visibility", "visible");
-        rows.push(`<div class="tip-row"><span class="legend-swatch" style="background:${s.color}"></span><span>${s.name}</span><span class="tip-val">${fmt(p.v)} ms</span></div>`);
-      } else dots[i].setAttribute("visibility", "hidden");
-    });
-    tip.innerHTML = `<div class="tip-time">${fmtTime(tv, true)}</div>${rows.join("")}`;
-    tip.style.display = "block";
-    const left = Math.min((cx / W) * rect.width + 12, rect.width - tip.offsetWidth - 8);
-    tip.style.left = Math.max(4, left) + "px";
-    tip.style.top = "8px";
-  }
-  function onLeave() {
-    crosshair.setAttribute("visibility", "hidden");
-    dots.forEach((d) => d.setAttribute("visibility", "hidden"));
-    tip.style.display = "none";
-  }
-  capture.addEventListener("mousemove", onMove);
-  capture.addEventListener("mouseleave", onLeave);
+  NetPulseChart.line(host, buildSeries(target.target, history), { unit: "ms" });
 }
 
 function setUpdated(iso) {
