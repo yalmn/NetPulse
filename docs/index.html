@@ -24,7 +24,30 @@
       </div>
       <div class="toolbar">
         <span class="meta" id="last-updated">Lade Daten …</span>
-        <button class="btn btn-primary" id="live-check">Jetzt pruefen</button>
+      </div>
+    </div>
+
+    <!-- Interaktive Schnellpruefung -->
+    <div class="card">
+      <div class="card-header-bar"><h3>Schnellpruefung</h3></div>
+      <div class="card-body">
+        <form class="probe-form" id="probe-form">
+          <div class="form-field target-field">
+            <label for="probe-target">IP oder URL</label>
+            <input id="probe-target" type="text" placeholder="z. B. example.com oder 1.1.1.1" autocomplete="off" />
+          </div>
+          <div class="form-field type-field">
+            <label for="probe-type">Typ</label>
+            <select id="probe-type">
+              <option value="ping">Ping</option>
+              <option value="http">HTTP</option>
+              <option value="https">HTTPS</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary" id="probe-btn">Pruefen</button>
+        </form>
+        <div class="country-picker" id="country-picker"></div>
+        <div id="probe-result"></div>
       </div>
     </div>
 

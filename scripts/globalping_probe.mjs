@@ -10,6 +10,8 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CONFIG_PATH = resolve(ROOT, "docs/config.json");
 const OUTPUT_PATH = resolve(ROOT, "docs/data/status.json");
+const HISTORY_PATH = resolve(ROOT, "docs/data/history.json");
+const HISTORY_MAX_POINTS = 480; // ~5 Tage bei 15-Min-Takt
 const API = "https://api.globalping.io/v1/measurements";
 
 // Optionales Token (hoeheres Rate-Limit). Nur im CI-Job, nie im Frontend.
@@ -132,6 +134,36 @@ async function main() {
   await mkdir(dirname(OUTPUT_PATH), { recursive: true });
   await writeFile(OUTPUT_PATH, JSON.stringify(out, null, 2) + "\n", "utf8");
   console.log(`\nGeschrieben: ${OUTPUT_PATH}`);
+
+  await appendHistory(out);
+  console.log(`Geschrieben: ${HISTORY_PATH}`);
+}
+
+// Haengt einen Verlaufspunkt an history.json an (Ø RTT pro Ziel pro Land) und
+// begrenzt die Anzahl der gespeicherten Punkte.
+async function appendHistory(out) {
+  let history = { maxPoints: HISTORY_MAX_POINTS, points: [] };
+  try {
+    const existing = JSON.parse(await readFile(HISTORY_PATH, "utf8"));
+    if (Array.isArray(existing.points)) history = existing;
+  } catch (_) {
+    /* erste Ausfuehrung: neue Historie */
+  }
+  history.maxPoints = HISTORY_MAX_POINTS;
+
+  const data = {};
+  for (const t of out.targets) {
+    data[t.target] = {};
+    for (const r of t.results || []) {
+      data[t.target][r.country] = typeof r.avg === "number" ? r.avg : null;
+    }
+  }
+  history.points.push({ t: out.generatedAt, data });
+  if (history.points.length > history.maxPoints) {
+    history.points = history.points.slice(-history.maxPoints);
+  }
+
+  await writeFile(HISTORY_PATH, JSON.stringify(history) + "\n", "utf8");
 }
 
 main().catch((err) => {
