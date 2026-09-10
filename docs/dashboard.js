@@ -1,17 +1,17 @@
 // NetPulse Monitoring Dashboard
-// Fuehrt HTTP-, HTTPS- und Ping-Checks direkt im Browser ueber Globalping aus und zeigt
-// Status, Antwortzeit, Sparkline und Uptime je Ziel. Zusaetzlich ein Widget mit der
-// Erreichbarkeit aus mehreren Laendern. Kein Server noetig. Wegen des freien Globalping
-// Limits (250 Checks pro Stunde und IP) liegt das Intervall bei etwa 60 Sekunden.
+// Fuehrt HTTP-, HTTPS- und Ping-Checks direkt im Browser ueber Globalping aus.
+// Wichtig: Das freie Globalping-Limit liegt bei 250 Checks pro Stunde und IP. Deshalb
+// werden die Checks automatisch getaktet (Token-Bucket), damit das Limit nie ueberschritten
+// wird. Bei einem Limit wird kurz gedrosselt und danach automatisch weitergemacht.
 
 const GLOBALPING = "https://api.globalping.io/v1/measurements";
 const TYPES = ["http", "https", "ping"];
 const TYPE_LABEL = { http: "HTTP", https: "HTTPS", ping: "Ping" };
 const BUFFER = 60;         // gespeicherte Messpunkte je Ziel und Typ
-const RATE_LIMIT = 250;    // freie Globalping-Tests pro Stunde und IP
+const SAFE_RATE = 180;     // Checks pro Stunde, mit Abstand unter dem freien Limit von 250
+const BACKOFF_MS = 45000;  // Drosselzeit nach einem Rate-Limit
 
 const LS_TARGETS = "netpulse-dash-targets";
-const LS_INTERVAL = "netpulse-dash-interval";
 
 const PALETTE = {
   light: { http: "#2a78d6", https: "#1baf7a", ping: "#4a3aa7" },
@@ -23,22 +23,40 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const nowT = () => new Date().toLocaleTimeString("de-DE");
 const hostOf = (target) => target.replace(/^https?:\/\//i, "").split("/")[0];
 
-let config = { checkIntervalSec: 60, countryIntervalSec: 300, primaryCountry: "DE", defaultTargets: [], countries: [] };
+let config = { checkIntervalSec: 60, countryIntervalSec: 600, primaryCountry: "DE", defaultTargets: [], countries: [] };
 let targets = [];
-let intervalSec = 60;
 let paused = false;
 let store = {};        // store[target][type] = [{ t, ms, status, code }]
 let countryStore = {}; // countryStore[target] = { code: { status, ms } }
 let lastCountryAt = 0;
-let checkTimer = null;
-let checkBusy = false;
-let countryBusy = false;
+let backoffUntil = 0;
+let rateState = { remaining: null, resetAt: 0 }; // echtes Globalping-Kontingent aus den Response-Headern
+
+// Token-Bucket: gibt pro Sekunde SAFE_RATE/3600 Tokens frei. Eine Messung an N Standorten
+// kostet N Tokens. So bleibt die Summe aller Checks sicher unter dem freien Limit.
+const bucket = {
+  capacity: 6,
+  tokens: 3,
+  perSec: SAFE_RATE / 3600,
+  last: Date.now(),
+  refill() {
+    const now = Date.now();
+    this.tokens = Math.min(this.capacity, this.tokens + ((now - this.last) / 1000) * this.perSec);
+    this.last = now;
+  },
+  async take(n) {
+    while (true) {
+      this.refill();
+      if (this.tokens >= n) { this.tokens -= n; return; }
+      await sleep(500);
+    }
+  },
+};
 
 // ── DOM ──
 const targetInput = document.getElementById("target-input");
 const addTargetBtn = document.getElementById("add-target");
-const intervalInput = document.getElementById("interval-input");
-const rateEstimate = document.getElementById("rate-estimate");
+const rateInfo = document.getElementById("rate-estimate");
 const summaryEl = document.getElementById("summary");
 const gridEl = document.getElementById("targets-grid");
 const countryWidget = document.getElementById("country-widget");
@@ -76,19 +94,49 @@ function overallStatus(target) {
   return "degraded";
 }
 
-// ── Rate-Schaetzung ──
-function updateRateEstimate() {
+// ── Info zur automatischen Taktung ──
+function updateRateInfo() {
   const n = targets.length;
-  const mainPerHour = n * TYPES.length * (3600 / intervalSec);
+  if (n === 0) { rateInfo.textContent = "Noch keine Ziele. Oben eine IP oder URL hinzufügen."; return; }
   const countryPerHour = n * (config.countries.length || 0) * (3600 / config.countryIntervalSec);
-  const total = Math.round(mainPerHour + countryPerHour);
-  if (n === 0) { rateEstimate.textContent = "Noch keine Ziele."; return; }
-  const over = total > RATE_LIMIT;
-  rateEstimate.innerHTML =
-    `Geschaetzt <strong>${total} Checks/Stunde</strong> (Haupt alle ${intervalSec}s, Laender alle ${config.countryIntervalSec}s). ` +
-    (over
-      ? `<span class="rate-over">Ueber dem freien Limit von ${RATE_LIMIT}/h. Intervall erhoehen oder weniger Ziele.</span>`
-      : `Im freien Limit (${RATE_LIMIT}/h).`);
+  const mainPerHour = Math.max(20, SAFE_RATE - countryPerHour);
+  const mainJobs = n * TYPES.length;
+  const refreshSec = Math.round((mainJobs * 3600) / mainPerHour);
+  rateInfo.innerHTML =
+    `Automatische Taktung, bleibt sicher unter dem freien Limit von 250 Checks/Stunde. ` +
+    `Jedes Ziel wird etwa alle <strong>${refreshSec} Sekunden</strong> geprüft. ` +
+    `Mehr Ziele bedeuten pro Ziel größere Abstände.`;
+}
+
+// Liest das echte Kontingent aus den Globalping-Headern (auch bei 429).
+function syncRate(headers) {
+  const rem = headers.get("x-ratelimit-remaining");
+  const reset = headers.get("x-ratelimit-reset");
+  if (rem != null) rateState.remaining = parseInt(rem, 10);
+  if (reset != null) rateState.resetAt = Date.now() + parseInt(reset, 10) * 1000;
+  if (rateState.remaining != null && rateState.remaining <= 0) triggerBackoff();
+}
+
+function resetMinutes() {
+  return Math.max(1, Math.ceil((rateState.resetAt - Date.now()) / 60000));
+}
+
+function setConn(kind) {
+  if (kind === "limit") {
+    connStatus.textContent = `Globalping-Kontingent aufgebraucht (0 von 250). Neues Kontingent in etwa ${resetMinutes()} Minuten, danach geht es automatisch weiter.`;
+    connStatus.className = "meta err";
+  } else {
+    const budget = rateState.remaining != null ? `, Kontingent ${rateState.remaining} von 250` : "";
+    connStatus.textContent = "zuletzt geprüft " + nowT() + budget;
+    connStatus.className = "meta ok";
+  }
+}
+
+function triggerBackoff() {
+  const waitMs = rateState.resetAt > Date.now() ? rateState.resetAt - Date.now() : BACKOFF_MS;
+  backoffUntil = Date.now() + Math.min(waitMs + 1000, 66 * 60 * 1000);
+  bucket.tokens = 0;
+  setConn("limit");
 }
 
 // ── Persistenz ──
@@ -102,22 +150,19 @@ function addTarget(raw) {
   targets.push(t);
   saveTargets();
   targetInput.value = "";
-  updateRateEstimate();
+  updateRateInfo();
   render();
-  runCheckCycle();
-  runCountryCycle(true);
 }
 function removeTarget(t) {
   targets = targets.filter((x) => x !== t);
   delete store[t];
   delete countryStore[t];
   saveTargets();
-  updateRateEstimate();
+  updateRateInfo();
   render();
 }
 
 // ── Globalping-Messung ──
-// locations: [{ country }]; liefert je Standort { status, ms, code? }
 async function gpMeasure(target, type, locations) {
   const isHttp = type === "http" || type === "https";
   const body = {
@@ -129,6 +174,7 @@ async function gpMeasure(target, type, locations) {
       : { packets: 2 },
   };
   const res = await fetch(GLOBALPING, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  syncRate(res.headers);
   if (res.status === 429) throw new Error("429");
   if (!res.ok) throw new Error(String(res.status));
   const { id } = await res.json();
@@ -151,51 +197,52 @@ async function gpMeasure(target, type, locations) {
   });
 }
 
-async function runCheckCycle() {
-  if (paused || checkBusy || targets.length === 0) return;
-  checkBusy = true;
-  const t = Date.now();
-  const loc = [{ country: config.primaryCountry }];
-  const tasks = [];
-  for (const target of targets)
-    for (const type of TYPES)
-      tasks.push(gpMeasure(target, type, loc).then((arr) => ({ target, type, r: arr[0] })).catch((e) => ({ target, type, err: e.message })));
-  const results = await Promise.all(tasks);
-  let rateLimited = false;
-  for (const res of results) {
-    if (res.err) {
-      if (res.err === "429") rateLimited = true;
-      pushSample(res.target, res.type, { t, ms: null, status: "unknown" });
-    } else {
-      pushSample(res.target, res.type, { t, ms: res.r.ms, status: res.r.status, code: res.r.code });
+// ── Schleife: Haupt-Checks (rundum, ein Job nach dem anderen, getaktet) ──
+async function mainLoop() {
+  let i = 0;
+  while (true) {
+    if (paused || targets.length === 0 || Date.now() < backoffUntil) { await sleep(1000); continue; }
+    const jobs = targets.flatMap((t) => TYPES.map((ty) => ({ target: t, type: ty })));
+    if (jobs.length === 0) { await sleep(1000); continue; }
+    const job = jobs[i % jobs.length];
+    i++;
+    await bucket.take(1);
+    if (Date.now() < backoffUntil) continue;
+    try {
+      const [r] = await gpMeasure(job.target, job.type, [{ country: config.primaryCountry }]);
+      pushSample(job.target, job.type, { t: Date.now(), ms: r.ms, status: r.status, code: r.code });
+      setConn("ok");
+    } catch (e) {
+      if (e.message === "429") triggerBackoff();
+      else pushSample(job.target, job.type, { t: Date.now(), ms: null, status: "unknown" });
     }
+    render();
   }
-  if (rateLimited) { connStatus.textContent = "Rate-Limit erreicht, Intervall erhoehen"; connStatus.className = "meta err"; }
-  else { connStatus.textContent = "zuletzt geprueft " + nowT(); connStatus.className = "meta ok"; }
-  checkBusy = false;
-  render();
 }
 
-// ── Laender-Checks ──
-async function runCountryCycle(force) {
-  if (countryBusy || targets.length === 0 || config.countries.length === 0) return;
-  if (!force && Date.now() - lastCountryAt < config.countryIntervalSec * 1000) return;
-  countryBusy = true;
-  const locs = config.countries.map((c) => ({ country: c.code }));
-  try {
+// ── Schleife: Laender-Erreichbarkeit ──
+async function countryLoop() {
+  while (true) {
+    await sleep(2000);
+    if (paused || targets.length === 0 || config.countries.length === 0) continue;
+    if (Date.now() - lastCountryAt < config.countryIntervalSec * 1000) continue;
+    if (Date.now() < backoffUntil) continue;
+    const locs = config.countries.map((c) => ({ country: c.code }));
     for (const target of targets) {
+      if (Date.now() < backoffUntil) break;
+      await bucket.take(locs.length);
       try {
         const arr = await gpMeasure(target, "ping", locs);
         const out = {};
-        config.countries.forEach((c, i) => { out[c.code] = arr[i]; });
+        config.countries.forEach((c, idx) => { out[c.code] = arr[idx]; });
         countryStore[target] = out;
-      } catch (_) { /* Ziel diesmal ueberspringen */ }
+      } catch (e) {
+        if (e.message === "429") { triggerBackoff(); break; }
+      }
     }
     lastCountryAt = Date.now();
     countryUpdated.textContent = "aktualisiert " + nowT();
     renderCountryWidget();
-  } finally {
-    countryBusy = false;
   }
 }
 
@@ -218,13 +265,12 @@ function renderSummary() {
     stat("Online", online, "ok") +
     stat("Teilweise", degraded, degraded ? "warn" : "") +
     stat("Offline", offline, offline ? "err" : "") +
-    stat("Ø Antwortzeit", avg != null ? avg + " ms" : "–") +
-    stat("Intervall", intervalSec + "s");
+    stat("Ø Antwortzeit", avg != null ? avg + " ms" : "–");
 }
 
 function renderTargets() {
   if (targets.length === 0) {
-    gridEl.innerHTML = '<div class="card"><div class="empty-state">Noch keine Ziele. Oben eine IP oder URL hinzufuegen.</div></div>';
+    gridEl.innerHTML = '<div class="card"><div class="empty-state">Noch keine Ziele. Oben eine IP oder URL hinzufügen.</div></div>';
     return;
   }
   gridEl.innerHTML = "";
@@ -288,23 +334,11 @@ function render() {
 }
 
 // ── Steuerung ──
-function applyInterval() {
-  const v = Math.max(30, parseInt(intervalInput.value, 10) || 60);
-  intervalSec = v;
-  localStorage.setItem(LS_INTERVAL, String(v));
-  updateRateEstimate();
-  renderSummary();
-  clearInterval(checkTimer);
-  checkTimer = setInterval(runCheckCycle, intervalSec * 1000);
-}
-
 addTargetBtn.addEventListener("click", () => addTarget(targetInput.value));
 targetInput.addEventListener("keydown", (e) => { if (e.key === "Enter") addTarget(targetInput.value); });
-intervalInput.addEventListener("change", applyInterval);
 pauseBtn.addEventListener("click", () => {
   paused = !paused;
   pauseBtn.textContent = paused ? "Fortsetzen" : "Pause";
-  if (!paused) runCheckCycle();
 });
 window.matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", render);
 
@@ -313,16 +347,12 @@ async function init() {
   try { config = { ...config, ...(await (await fetch("config.json", { cache: "no-store" })).json()) }; } catch (_) {}
   try { const t = JSON.parse(localStorage.getItem(LS_TARGETS)); if (Array.isArray(t)) targets = t; } catch (_) {}
   if (targets.length === 0 && Array.isArray(config.defaultTargets)) targets = [...config.defaultTargets];
-  intervalSec = Math.max(30, parseInt(localStorage.getItem(LS_INTERVAL), 10) || config.checkIntervalSec || 60);
-  intervalInput.value = intervalSec;
 
-  updateRateEstimate();
+  updateRateInfo();
   render();
-
-  runCheckCycle();
-  checkTimer = setInterval(runCheckCycle, intervalSec * 1000);
-  runCountryCycle(true);
-  setInterval(() => runCountryCycle(false), 15000);
+  mainLoop();
+  countryLoop();
+  setInterval(() => { if (Date.now() < backoffUntil) setConn("limit"); }, 5000);
 }
 
 init();
