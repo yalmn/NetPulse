@@ -222,10 +222,12 @@ body {
 .uptime-legend .uptime-cell { display: inline-block; width: 10px; height: 10px; vertical-align: middle; margin: 0 3px 0 8px; }
 
 /* ── Dashboard: Einrichtung ── */
-.dash-setup { display: flex; gap: 20px; flex-wrap: wrap; }
-.dash-setup .form-field { flex: 1; min-width: 260px; }
+.dash-setup { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-end; }
+.dash-setup .form-field.target-field { flex: 1; min-width: 260px; }
+.dash-setup .form-field.interval-field { flex: 0 0 auto; width: 150px; }
 .input-row { display: flex; gap: 8px; }
 .input-row input { flex: 1; }
+.rate-over { color: var(--danger); }
 .status-warn { background: var(--warn-light); color: var(--warn); }
 .status-warn .status-dot { background: var(--warn); }
 

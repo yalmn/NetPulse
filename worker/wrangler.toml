@@ -1,5 +1,0 @@
-name = "netpulse-checks"
-main = "src/index.js"
-compatibility_date = "2025-09-01"
-
-# Kein KV, keine Secrets noetig. Der Worker fuehrt nur ausgehende Checks aus.

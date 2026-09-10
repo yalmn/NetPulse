@@ -1,11 +1,10 @@
 {
   "title": "NetPulse",
-  "workerUrl": "",
-  "checkIntervalSec": 10,
-  "countryIntervalSec": 120,
+  "checkIntervalSec": 60,
+  "countryIntervalSec": 300,
+  "primaryCountry": "DE",
   "defaultTargets": [
-    "example.com",
-    "1.1.1.1"
+    "example.com"
   ],
   "countries": [
     { "code": "CA", "name": "Kanada" },
