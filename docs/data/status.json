@@ -1,0 +1,126 @@
+{
+  "generatedAt": "2026-09-10T12:06:20.005Z",
+  "type": "ping",
+  "targets": [
+    {
+      "target": "example.com",
+      "results": [
+        {
+          "country": "JP",
+          "name": "Japan",
+          "city": "Tokyo",
+          "network": "xTom",
+          "status": "up",
+          "loss": 0,
+          "min": 1.178,
+          "avg": 1.247,
+          "max": 1.287
+        },
+        {
+          "country": "AU",
+          "name": "Australien",
+          "city": "Sydney",
+          "network": "Oracle",
+          "status": "up",
+          "loss": 0,
+          "min": 1.313,
+          "avg": 1.348,
+          "max": 1.383
+        },
+        {
+          "country": "CA",
+          "name": "Kanada",
+          "city": "Montreal",
+          "network": "OVH",
+          "status": "up",
+          "loss": 0,
+          "min": 7.676,
+          "avg": 7.733,
+          "max": 7.819
+        },
+        {
+          "country": "DE",
+          "name": "Deutschland",
+          "city": "Falkenstein",
+          "network": "Hetzner Online",
+          "status": "up",
+          "loss": 0,
+          "min": 5.674,
+          "avg": 5.9,
+          "max": 6.325
+        },
+        {
+          "country": "US",
+          "name": "USA",
+          "city": "Los Angeles",
+          "network": "HostPapa",
+          "status": "up",
+          "loss": 0,
+          "min": 1.585,
+          "avg": 1.6,
+          "max": 1.61
+        }
+      ]
+    },
+    {
+      "target": "1.1.1.1",
+      "results": [
+        {
+          "country": "JP",
+          "name": "Japan",
+          "city": "Tokyo",
+          "network": "xTom",
+          "status": "up",
+          "loss": 0,
+          "min": 1.105,
+          "avg": 1.182,
+          "max": 1.255
+        },
+        {
+          "country": "AU",
+          "name": "Australien",
+          "city": "Sydney",
+          "network": "Oracle",
+          "status": "up",
+          "loss": 0,
+          "min": 1.196,
+          "avg": 1.223,
+          "max": 1.259
+        },
+        {
+          "country": "CA",
+          "name": "Kanada",
+          "city": "Montreal",
+          "network": "OVH",
+          "status": "up",
+          "loss": 0,
+          "min": 7.833,
+          "avg": 7.871,
+          "max": 7.942
+        },
+        {
+          "country": "DE",
+          "name": "Deutschland",
+          "city": "Falkenstein",
+          "network": "Hetzner Online",
+          "status": "up",
+          "loss": 0,
+          "min": 5.618,
+          "avg": 5.637,
+          "max": 5.663
+        },
+        {
+          "country": "US",
+          "name": "USA",
+          "city": "Los Angeles",
+          "network": "HostPapa",
+          "status": "up",
+          "loss": 0,
+          "min": 1.233,
+          "avg": 1.283,
+          "max": 1.366
+        }
+      ]
+    }
+  ]
+}
