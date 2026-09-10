@@ -188,5 +188,35 @@
     host.appendChild(table);
   }
 
-  window.NetPulseChart = { line, uptime };
+  // Kompakte Sparkline fuer Antwortzeiten. points: [{ v, status }] (aeltester zuerst).
+  function spark(host, points, opts = {}) {
+    host.innerHTML = "";
+    const color = opts.color || "#2a78d6";
+    const W = 240, H = 36, pad = 3;
+    if (points.length === 0) { host.innerHTML = '<span class="spark-empty">keine Daten</span>'; return; }
+    // Nur erreichbare Punkte bilden die Linie, Ausfaelle brechen sie und werden rot markiert.
+    const upVals = points.filter((p) => p.status !== "down" && typeof p.v === "number").map((p) => p.v);
+    const min = upVals.length ? Math.min(...upVals) : 0;
+    const max = upVals.length ? Math.max(...upVals) : 1;
+    const span = max - min || 1;
+    const n = points.length;
+    const xOf = (i) => (n <= 1 ? W / 2 : pad + (i / (n - 1)) * (W - 2 * pad));
+    const yOf = (v) => H - pad - ((v - min) / span) * (H - 2 * pad);
+
+    const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, class: "spark", preserveAspectRatio: "none" });
+    let seg = [];
+    const flush = () => {
+      if (seg.length > 1) svg.appendChild(el("polyline", { points: seg.map(([x, y]) => `${x},${y}`).join(" "), fill: "none", stroke: color, "stroke-width": 1.5, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+      else if (seg.length === 1) svg.appendChild(el("circle", { cx: seg[0][0], cy: seg[0][1], r: 1.5, fill: color }));
+      seg = [];
+    };
+    points.forEach((p, i) => (p.status !== "down" && typeof p.v === "number" ? seg.push([xOf(i), yOf(p.v)]) : flush()));
+    flush();
+    points.forEach((p, i) => {
+      if (p.status === "down") svg.appendChild(el("circle", { cx: xOf(i), cy: H - pad, r: 2, fill: "#dc2626" }));
+    });
+    host.appendChild(svg);
+  }
+
+  window.NetPulseChart = { line, uptime, spark };
 })();

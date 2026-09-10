@@ -1,17 +1,16 @@
 {
   "title": "NetPulse",
-  "type": "ping",
-  "packets": 3,
-  "latencyWarnMs": 250,
-  "targets": [
+  "workerUrl": "",
+  "checkIntervalSec": 10,
+  "countryIntervalSec": 120,
+  "defaultTargets": [
     "example.com",
     "1.1.1.1"
   ],
   "countries": [
+    { "code": "CA", "name": "Kanada" },
     { "code": "JP", "name": "Japan" },
     { "code": "AU", "name": "Australien" },
-    { "code": "CA", "name": "Kanada" },
-    { "code": "DE", "name": "Deutschland" },
     { "code": "US", "name": "USA" }
   ]
 }
