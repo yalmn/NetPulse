@@ -21,7 +21,7 @@
     <div class="page-header">
       <div>
         <h2>Monitoring Dashboard</h2>
-        <p>Healthchecks fuer HTTP, HTTPS und Ping alle 10 Sekunden, plus Erreichbarkeit aus mehreren Laendern.</p>
+        <p>Healthchecks fuer HTTP, HTTPS und Ping via Globalping, plus Erreichbarkeit aus mehreren Laendern.</p>
       </div>
       <div class="toolbar">
         <button class="btn btn-ghost" id="pause-btn">Pause</button>
@@ -39,15 +39,12 @@
               <button class="btn btn-primary" id="add-target">Hinzufuegen</button>
             </div>
           </div>
-          <div class="form-field">
-            <label for="worker-url">Worker-URL</label>
-            <div class="input-row">
-              <input id="worker-url" type="text" placeholder="https://netpulse-checks.DEIN-SUBDOMAIN.workers.dev" autocomplete="off" />
-              <button class="btn btn-ghost" id="save-worker">Speichern</button>
-            </div>
+          <div class="form-field interval-field">
+            <label for="interval-input">Intervall (Sekunden)</label>
+            <input id="interval-input" type="number" min="30" step="10" value="60" />
           </div>
         </div>
-        <p class="hint" id="worker-hint"></p>
+        <p class="hint" id="rate-estimate"></p>
       </div>
     </div>
 
@@ -69,7 +66,7 @@
     </div>
 
     <footer>
-      HTTP, HTTPS und Ping via eigenem Cloudflare-Worker. Laender-Checks via <a href="https://globalping.io" target="_blank" rel="noopener">Globalping</a>.
+      Alle Checks via <a href="https://globalping.io" target="_blank" rel="noopener">Globalping</a>. Laeuft direkt im Browser, solange dieser Tab geoeffnet ist.
     </footer>
   </main>
 

@@ -83,23 +83,11 @@ Interaktive API-Docs: http://localhost:8000/docs (Login im Browser-Dialog)
 
 ## Monitoring Dashboard (GitHub Pages)
 
-Unter `docs/` liegt ein statisches Monitoring-Dashboard, das ueber GitHub Pages weltweit erreichbar ist. Der Nutzer gibt IP-Adressen und URLs ein, darauf laufen Healthchecks fuer HTTP, HTTPS und Ping alle 10 Sekunden mit Status, Antwortzeit, Sparkline und Uptime. Ein zweites Widget zeigt die Erreichbarkeit aus mehreren Laendern (Kanada, Japan, Australien, USA) via [Globalping](https://globalping.io).
+Unter `docs/` liegt ein statisches Monitoring-Dashboard, das ueber GitHub Pages weltweit erreichbar ist. Der Nutzer gibt IP-Adressen und URLs ein, darauf laufen Healthchecks fuer HTTP, HTTPS und Ping mit Status, Antwortzeit, Sparkline und Uptime. Ein zweites Widget zeigt die Erreichbarkeit aus mehreren Laendern (Kanada, Japan, Australien, USA).
 
-Aufbau:
+Alle Checks laufen direkt im Browser ueber [Globalping](https://globalping.io), ein kostenloses globales Mess-Netzwerk. Es wird kein Server und kein Konto benoetigt. Das kostenlose Limit liegt bei 250 Checks pro Stunde und IP, daher liegt das Intervall standardmaessig bei 60 Sekunden. Das Dashboard zeigt oben eine Schaetzung der Checks pro Stunde und warnt, wenn das Limit ueberschritten wird.
 
-- **`docs/`**: das Dashboard (`index.html`, `dashboard.js`, `chart.js`, `style.css`, `config.json`). Reines Frontend, kein Build noetig.
-- **`worker/`**: ein kleiner Cloudflare-Worker, der die HTTP-, HTTPS- und Ping-Checks ausfuehrt (Browser koennen kein ICMP und keine fremden Statuscodes lesen, daher der Worker). Ping ist ein TCP-Connect auf Port 443 mit Fallback auf 80.
-
-### Worker deployen
-
-```bash
-cd worker
-npm install
-npx wrangler login
-npm run deploy
-```
-
-Nach dem Deploy zeigt wrangler die URL, etwa `https://netpulse-checks.DEIN-SUBDOMAIN.workers.dev`. Diese URL im Dashboard oben im Feld "Worker-URL" eintragen und speichern (wird lokal im Browser gemerkt). Details siehe `worker/README.md`.
+Aufbau: reines Frontend in `docs/` (`index.html`, `dashboard.js`, `chart.js`, `style.css`, `config.json`), kein Build noetig.
 
 ### GitHub Pages aktivieren
 
@@ -108,20 +96,18 @@ In den Repo-Einstellungen unter *Settings, Pages* als Quelle Branch `master`, Or
 ### Lokal testen
 
 ```bash
-cd worker && npm install && npm run dev      # Worker auf http://127.0.0.1:8787
 python3 -m http.server -d docs 8080          # Dashboard auf http://localhost:8080
 ```
 
-Im Dashboard als Worker-URL `http://127.0.0.1:8787` eintragen.
-
 ### Standardwerte anpassen
 
-In `docs/config.json` lassen sich Standardziele, Laenderliste und Intervalle vorbelegen:
+In `docs/config.json` lassen sich Standardziele, Laenderliste, Intervalle und der Standort fuer die Haupt-Checks vorbelegen:
 
 ```json
 {
-  "checkIntervalSec": 10,
-  "countryIntervalSec": 120,
+  "checkIntervalSec": 60,
+  "countryIntervalSec": 300,
+  "primaryCountry": "DE",
   "defaultTargets": ["example.com", "1.1.1.1"],
   "countries": [{ "code": "CA", "name": "Kanada" }]
 }
