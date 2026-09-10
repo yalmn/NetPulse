@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NetPulse – Globale Erreichbarkeit</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-brand">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+      </svg>
+      NetPulse
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="page-header">
+      <div>
+        <h2 id="page-title">Globale Erreichbarkeit</h2>
+        <p id="page-subtitle">Pings aus verschiedenen Laendern via Globalping</p>
+      </div>
+      <div class="toolbar">
+        <span class="meta" id="last-updated">Lade Daten …</span>
+        <button class="btn btn-primary" id="live-check">Jetzt pruefen</button>
+      </div>
+    </div>
+
+    <div id="content"></div>
+
+    <footer>
+      Messungen via <a href="https://globalping.io" target="_blank" rel="noopener">Globalping</a>.
+      Automatisch aktualisiert per GitHub Actions.
+    </footer>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

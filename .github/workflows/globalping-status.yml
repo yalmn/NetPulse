@@ -1,0 +1,40 @@
+name: Globalping Status
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # alle 15 Minuten
+  workflow_dispatch: {}        # manuell ausloesbar
+
+permissions:
+  contents: write
+
+concurrency:
+  group: globalping-status
+  cancel-in-progress: true
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Messungen ausfuehren
+        env:
+          GLOBALPING_TOKEN: ${{ secrets.GLOBALPING_TOKEN }}
+        run: node scripts/globalping_probe.mjs
+
+      - name: Ergebnis committen
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet -- docs/data/status.json; then
+            git add docs/data/status.json
+            git commit -m "chore: update status data"
+            git push
+          else
+            echo "Keine Aenderung an status.json"
+          fi
