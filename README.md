@@ -81,39 +81,51 @@ curl -u admin:PASSWORT -X DELETE http://localhost:8000/targets/remove \
 
 Interaktive API-Docs: http://localhost:8000/docs (Login im Browser-Dialog)
 
-## Öffentliche Status-Seite (GitHub Pages)
+## Monitoring Dashboard (GitHub Pages)
 
-Unter `docs/` liegt eine statische Status-Seite, die weltweit ohne eigenen Webserver erreichbar ist. Sie zeigt die Erreichbarkeit der konfigurierten Ziele aus mehreren Ländern (z. B. Japan, Australien, Kanada). Die Messungen laufen über das kostenlose globale Probe-Netzwerk [Globalping](https://globalping.io) – es wird **keine eigene Infrastruktur pro Land** benötigt.
+Unter `docs/` liegt ein statisches Monitoring-Dashboard, das ueber GitHub Pages weltweit erreichbar ist. Der Nutzer gibt IP-Adressen und URLs ein, darauf laufen Healthchecks fuer HTTP, HTTPS und Ping alle 10 Sekunden mit Status, Antwortzeit, Sparkline und Uptime. Ein zweites Widget zeigt die Erreichbarkeit aus mehreren Laendern (Kanada, Japan, Australien, USA) via [Globalping](https://globalping.io).
 
-Funktionsweise:
+Aufbau:
 
-- Ein GitHub-Actions-Job (`.github/workflows/globalping-status.yml`) führt die Messungen alle 15 Minuten aus und schreibt das Ergebnis nach `docs/data/status.json`.
-- Die Seite liest dieses JSON und rendert es. Ein „Jetzt prüfen"-Button löst zusätzlich eine Live-Messung direkt im Browser aus.
+- **`docs/`**: das Dashboard (`index.html`, `dashboard.js`, `chart.js`, `style.css`, `config.json`). Reines Frontend, kein Build noetig.
+- **`worker/`**: ein kleiner Cloudflare-Worker, der die HTTP-, HTTPS- und Ping-Checks ausfuehrt (Browser koennen kein ICMP und keine fremden Statuscodes lesen, daher der Worker). Ping ist ein TCP-Connect auf Port 443 mit Fallback auf 80.
 
-**Aktivierung:** In den Repo-Einstellungen unter *Settings → Pages* als Quelle Branch `master`, Ordner `/docs` wählen. Danach ist die Seite unter `https://<user>.github.io/<repo>/` erreichbar.
+### Worker deployen
 
-**Ziele und Länder anpassen** in `docs/config.json`:
+```bash
+cd worker
+npm install
+npx wrangler login
+npm run deploy
+```
+
+Nach dem Deploy zeigt wrangler die URL, etwa `https://netpulse-checks.DEIN-SUBDOMAIN.workers.dev`. Diese URL im Dashboard oben im Feld "Worker-URL" eintragen und speichern (wird lokal im Browser gemerkt). Details siehe `worker/README.md`.
+
+### GitHub Pages aktivieren
+
+In den Repo-Einstellungen unter *Settings, Pages* als Quelle Branch `master`, Ordner `/docs` waehlen. Danach ist das Dashboard unter `https://<user>.github.io/<repo>/` erreichbar.
+
+### Lokal testen
+
+```bash
+cd worker && npm install && npm run dev      # Worker auf http://127.0.0.1:8787
+python3 -m http.server -d docs 8080          # Dashboard auf http://localhost:8080
+```
+
+Im Dashboard als Worker-URL `http://127.0.0.1:8787` eintragen.
+
+### Standardwerte anpassen
+
+In `docs/config.json` lassen sich Standardziele, Laenderliste und Intervalle vorbelegen:
 
 ```json
 {
-  "targets": ["example.com", "1.1.1.1"],
-  "countries": [
-    { "code": "JP", "name": "Japan" },
-    { "code": "AU", "name": "Australien" }
-  ],
-  "type": "ping",
-  "packets": 3
+  "checkIntervalSec": 10,
+  "countryIntervalSec": 120,
+  "defaultTargets": ["example.com", "1.1.1.1"],
+  "countries": [{ "code": "CA", "name": "Kanada" }]
 }
 ```
-
-Lokal testen:
-
-```bash
-node scripts/globalping_probe.mjs    # erzeugt docs/data/status.json
-python3 -m http.server -d docs 8080  # http://localhost:8080
-```
-
-Optional: Ein `GLOBALPING_TOKEN` als Repo-Secret erhöht das API-Rate-Limit (nur im Actions-Job, nicht im Frontend).
 
 ## Reinstall / Deinstallation
 

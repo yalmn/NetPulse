@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NetPulse – Globale Erreichbarkeit</title>
+  <title>NetPulse Monitoring</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -14,53 +14,66 @@
       </svg>
       NetPulse
     </div>
+    <span class="meta" id="conn-status"></span>
   </header>
 
   <main class="container">
     <div class="page-header">
       <div>
-        <h2 id="page-title">Globale Erreichbarkeit</h2>
-        <p id="page-subtitle">Pings aus verschiedenen Laendern via Globalping</p>
+        <h2>Monitoring Dashboard</h2>
+        <p>Healthchecks fuer HTTP, HTTPS und Ping alle 10 Sekunden, plus Erreichbarkeit aus mehreren Laendern.</p>
       </div>
       <div class="toolbar">
-        <span class="meta" id="last-updated">Lade Daten …</span>
-        <a class="btn btn-primary" href="monitor.html">Daueraufnahme →</a>
+        <button class="btn btn-ghost" id="pause-btn">Pause</button>
       </div>
     </div>
 
-    <!-- Interaktive Schnellpruefung -->
+    <!-- Einrichtung -->
     <div class="card">
-      <div class="card-header-bar"><h3>Schnellpruefung</h3></div>
       <div class="card-body">
-        <form class="probe-form" id="probe-form">
+        <div class="dash-setup">
           <div class="form-field target-field">
-            <label for="probe-target">IP oder URL</label>
-            <input id="probe-target" type="text" placeholder="z. B. example.com oder 1.1.1.1" autocomplete="off" />
+            <label for="target-input">Ziel hinzufuegen (IP oder URL)</label>
+            <div class="input-row">
+              <input id="target-input" type="text" placeholder="z. B. example.com oder 1.1.1.1" autocomplete="off" />
+              <button class="btn btn-primary" id="add-target">Hinzufuegen</button>
+            </div>
           </div>
-          <div class="form-field type-field">
-            <label for="probe-type">Typ</label>
-            <select id="probe-type">
-              <option value="ping">Ping</option>
-              <option value="http">HTTP</option>
-              <option value="https">HTTPS</option>
-            </select>
+          <div class="form-field">
+            <label for="worker-url">Worker-URL</label>
+            <div class="input-row">
+              <input id="worker-url" type="text" placeholder="https://netpulse-checks.DEIN-SUBDOMAIN.workers.dev" autocomplete="off" />
+              <button class="btn btn-ghost" id="save-worker">Speichern</button>
+            </div>
           </div>
-          <button type="submit" class="btn btn-primary" id="probe-btn">Pruefen</button>
-        </form>
-        <div class="country-picker" id="country-picker"></div>
-        <div id="probe-result"></div>
+        </div>
+        <p class="hint" id="worker-hint"></p>
       </div>
     </div>
 
-    <div id="content"></div>
+    <!-- Zusammenfassung -->
+    <div class="summary-bar" id="summary"></div>
+
+    <!-- Ziele -->
+    <div id="targets-grid"></div>
+
+    <!-- Widget: Laender-Erreichbarkeit -->
+    <div class="card">
+      <div class="card-header-bar">
+        <h3>Erreichbarkeit aus anderen Laendern</h3>
+        <span class="meta" id="country-updated"></span>
+      </div>
+      <div class="card-body">
+        <div id="country-widget"><div class="empty-state">Wird geladen, sobald Ziele vorhanden sind.</div></div>
+      </div>
+    </div>
 
     <footer>
-      Messungen via <a href="https://globalping.io" target="_blank" rel="noopener">Globalping</a>.
-      Automatisch aktualisiert per GitHub Actions.
+      HTTP, HTTPS und Ping via eigenem Cloudflare-Worker. Laender-Checks via <a href="https://globalping.io" target="_blank" rel="noopener">Globalping</a>.
     </footer>
   </main>
 
   <script src="chart.js"></script>
-  <script src="app.js"></script>
+  <script src="dashboard.js"></script>
 </body>
 </html>
