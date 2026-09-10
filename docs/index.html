@@ -21,7 +21,7 @@
     <div class="page-header">
       <div>
         <h2>Monitoring Dashboard</h2>
-        <p>Healthchecks fuer HTTP, HTTPS und Ping via Globalping, plus Erreichbarkeit aus mehreren Laendern.</p>
+        <p>Healthchecks für HTTP, HTTPS und Ping via Globalping, plus Erreichbarkeit aus mehreren Ländern.</p>
       </div>
       <div class="toolbar">
         <button class="btn btn-ghost" id="pause-btn">Pause</button>
@@ -33,15 +33,11 @@
       <div class="card-body">
         <div class="dash-setup">
           <div class="form-field target-field">
-            <label for="target-input">Ziel hinzufuegen (IP oder URL)</label>
+            <label for="target-input">Ziel hinzufügen (IP oder URL)</label>
             <div class="input-row">
               <input id="target-input" type="text" placeholder="z. B. example.com oder 1.1.1.1" autocomplete="off" />
-              <button class="btn btn-primary" id="add-target">Hinzufuegen</button>
+              <button class="btn btn-primary" id="add-target">Hinzufügen</button>
             </div>
-          </div>
-          <div class="form-field interval-field">
-            <label for="interval-input">Intervall (Sekunden)</label>
-            <input id="interval-input" type="number" min="30" step="10" value="60" />
           </div>
         </div>
         <p class="hint" id="rate-estimate"></p>
@@ -54,10 +50,10 @@
     <!-- Ziele -->
     <div id="targets-grid"></div>
 
-    <!-- Widget: Laender-Erreichbarkeit -->
+    <!-- Widget: Länder-Erreichbarkeit -->
     <div class="card">
       <div class="card-header-bar">
-        <h3>Erreichbarkeit aus anderen Laendern</h3>
+        <h3>Erreichbarkeit aus anderen Ländern</h3>
         <span class="meta" id="country-updated"></span>
       </div>
       <div class="card-body">
@@ -66,7 +62,7 @@
     </div>
 
     <footer>
-      Alle Checks via <a href="https://globalping.io" target="_blank" rel="noopener">Globalping</a>. Laeuft direkt im Browser, solange dieser Tab geoeffnet ist.
+      Alle Checks via <a href="https://globalping.io" target="_blank" rel="noopener">Globalping</a>. Läuft direkt im Browser, solange dieser Tab geöffnet ist.
     </footer>
   </main>
 
