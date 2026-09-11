@@ -1,36 +1,53 @@
-from fastapi import FastAPI, HTTPException, Request, Form
+from contextlib import asynccontextmanager
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Form, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Literal
 from pathlib import Path
 from urllib.parse import urlparse, quote_plus
+import asyncio
 import ipaddress
 import json
+import math
+import os
 import re
+import secrets
+import time
 import httpx
 import whois
 import dns.resolver
 
-app = FastAPI(title="NetPulse API")
-
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
+from geo import COUNTRIES, GeoCollector
 
 PROMETHEUS_RELOAD_URL = "http://prometheus:9090/-/reload"
 PROMETHEUS_QUERY_URL = "http://prometheus:9090/api/v1/query"
+PROMETHEUS_QUERY_RANGE_URL = "http://prometheus:9090/api/v1/query_range"
+
+NETPULSE_USER = os.getenv("NETPULSE_USER", "admin")
+NETPULSE_PASSWORD = os.getenv("NETPULSE_PASSWORD", "")
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "https://yalmn.github.io").split(",")
+    if origin.strip()
+]
 
 TARGET_FILES = {
     "http": Path("/data/urls.json"),
     "https": Path("/data/https_urls.json"),
     "icmp": Path("/data/icmp_targets.json"),
+    "geo": Path("/data/geo_targets.json"),
 }
 
 LABEL_MAP = {
     "http": "web-check",
     "https": "tls-check",
     "icmp": "ping-check",
+    "geo": "geo-check",
 }
 
 JOB_MAP = {
@@ -39,9 +56,64 @@ JOB_MAP = {
     "icmp": "blackbox_icmp",
 }
 
+# Zeitraum -> (Sekunden, Schrittweite in Sekunden) für die Länder-Diagramme
+GEO_RANGES = {
+    "1h": (3600, 60),
+    "6h": (6 * 3600, 120),
+    "24h": (24 * 3600, 300),
+    "7d": (7 * 24 * 3600, 1800),
+}
+
 HOSTNAME_REGEX = re.compile(
     r"^(?=.{1,253}$)(?!-)([a-zA-Z0-9-]{1,63}\.)*[a-zA-Z0-9-]{1,63}$"
 )
+
+TargetType = Literal["http", "https", "icmp", "geo"]
+
+
+def get_geo_targets() -> List[str]:
+    return load_targets(TARGET_FILES["geo"]).get("targets", [])
+
+
+geo_collector = GeoCollector(get_geo_targets)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    task = asyncio.create_task(geo_collector.run())
+    try:
+        yield
+    finally:
+        task.cancel()
+
+
+app = FastAPI(title="NetPulse API", lifespan=lifespan)
+
+# Das Dashboard läuft auf GitHub Pages (andere Origin), daher CORS für die JSON-API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
+
+security = HTTPBasic(auto_error=False)
+
+
+def require_user(credentials: HTTPBasicCredentials | None = Depends(security)) -> str:
+    # Bewusst ohne WWW-Authenticate-Header, damit der Browser keinen eigenen Dialog öffnet
+    if credentials is None or not NETPULSE_PASSWORD:
+        raise HTTPException(status_code=401, detail="Login erforderlich")
+
+    user_ok = secrets.compare_digest(credentials.username.encode(), NETPULSE_USER.encode())
+    password_ok = secrets.compare_digest(credentials.password.encode(), NETPULSE_PASSWORD.encode())
+    if not (user_ok and password_ok):
+        raise HTTPException(status_code=401, detail="Benutzername oder Passwort falsch")
+
+    return credentials.username
 
 
 class TargetListRequest(BaseModel):
@@ -64,7 +136,7 @@ class TargetListRequest(BaseModel):
 
 
 class SingleTargetRequest(BaseModel):
-    type: Literal["http", "https", "icmp"]
+    type: TargetType
     target: str = Field(..., min_length=1)
 
     @field_validator("target")
@@ -74,6 +146,11 @@ class SingleTargetRequest(BaseModel):
         if not cleaned:
             raise ValueError("Target must not be empty")
         return cleaned
+
+
+class TargetCreateRequest(BaseModel):
+    target: str = Field(..., min_length=1)
+    types: List[TargetType] = Field(..., min_length=1)
 
 
 def validate_http_target(target: str, expected_scheme: str | None = None) -> None:
@@ -116,8 +193,39 @@ def validate_by_type(target_type: str, target: str) -> None:
         validate_http_target(target, expected_scheme="https")
     elif target_type == "icmp":
         validate_icmp_target(target)
+    elif target_type == "geo":
+        if target.startswith(("http://", "https://")):
+            validate_http_target(target)
+        else:
+            validate_icmp_target(target)
     else:
         raise HTTPException(status_code=400, detail="Invalid target type")
+
+
+def derive_target(raw: str, target_type: str) -> str:
+    """Leitet aus einer freien Eingabe (Host, IP oder URL) den Wert je Check-Typ ab."""
+    value = raw.strip()
+    match = re.match(r"^(https?)://", value, re.IGNORECASE)
+    scheme = match.group(1).lower() if match else None
+    rest = value[match.end():] if match else value
+    if rest.endswith("/") and rest.count("/") == 1:
+        rest = rest[:-1]
+    host = urlparse(f"//{rest}").hostname or rest
+
+    if target_type == "http":
+        return f"http://{rest}"
+    if target_type == "https":
+        return f"https://{rest}"
+    if target_type == "icmp":
+        return host
+    # geo: reine IP wird gepingt, alles andere per HTTP(S) geladen
+    if scheme is None and rest == host:
+        try:
+            ipaddress.ip_address(host)
+            return host
+        except ValueError:
+            pass
+    return f"{scheme or 'https'}://{rest}"
 
 
 def load_targets(file_path: Path) -> dict:
@@ -158,6 +266,34 @@ def unique_preserve_order(items: List[str]) -> List[str]:
     return list(dict.fromkeys(items))
 
 
+def add_to_list(target_type: str, target: str) -> bool:
+    """Fügt ein Ziel hinzu. Liefert False, wenn es schon existiert."""
+    current_targets = load_targets(TARGET_FILES[target_type]).get("targets", [])
+    if target in current_targets:
+        return False
+
+    save_targets(
+        TARGET_FILES[target_type],
+        LABEL_MAP[target_type],
+        unique_preserve_order(current_targets + [target]),
+    )
+    return True
+
+
+def remove_from_list(target_type: str, target: str) -> bool:
+    """Entfernt ein Ziel. Liefert False, wenn es nicht existiert."""
+    current_targets = load_targets(TARGET_FILES[target_type]).get("targets", [])
+    if target not in current_targets:
+        return False
+
+    save_targets(
+        TARGET_FILES[target_type],
+        LABEL_MAP[target_type],
+        [item for item in current_targets if item != target],
+    )
+    return True
+
+
 def get_all_targets_data() -> dict:
     result = {}
     for target_type, file_path in TARGET_FILES.items():
@@ -182,10 +318,10 @@ async def reload_prometheus() -> None:
         ) from exc
 
 
-async def query_prometheus(query: str) -> list[dict]:
+async def prometheus_get(url: str, params: dict) -> list[dict]:
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(PROMETHEUS_QUERY_URL, params={"query": query})
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(url, params=params)
             response.raise_for_status()
             payload = response.json()
 
@@ -196,6 +332,17 @@ async def query_prometheus(query: str) -> list[dict]:
         return data.get("result", [])
     except Exception:
         return []
+
+
+async def query_prometheus(query: str) -> list[dict]:
+    return await prometheus_get(PROMETHEUS_QUERY_URL, {"query": query})
+
+
+async def query_prometheus_range(query: str, start: float, end: float, step: int) -> list[dict]:
+    return await prometheus_get(
+        PROMETHEUS_QUERY_RANGE_URL,
+        {"query": query, "start": start, "end": end, "step": step},
+    )
 
 
 async def get_status_map(metric_name: str, job_name: str) -> dict[str, str]:
@@ -232,6 +379,10 @@ async def build_ui_targets_data() -> dict:
     result = {}
 
     for target_type, data in base_data.items():
+        # Geo-Ziele laufen über Globalping, nicht über den Blackbox Exporter
+        if target_type not in JOB_MAP:
+            continue
+
         enriched_targets = []
 
         for target in data.get("targets", []):
@@ -278,9 +429,24 @@ async def build_ui_targets_data() -> dict:
     return result
 
 
+def promql_escape(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def finite_or_none(raw: str, digits: int = 1, factor: float = 1.0) -> float | None:
+    value = float(raw) * factor
+    return round(value, digits) if math.isfinite(value) else None
+
+
 @app.get("/")
 def root():
     return {"message": "NetPulse API is running"}
+
+
+@app.get("/metrics", include_in_schema=False)
+def metrics():
+    # Wird nur intern von Prometheus gelesen, Caddy sperrt den Pfad nach außen
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/targets")
@@ -318,48 +484,32 @@ async def set_targets(request: TargetListRequest):
 async def add_target(request: SingleTargetRequest):
     validate_by_type(request.type, request.target)
 
-    current_data = load_targets(TARGET_FILES[request.type])
-    current_targets = current_data.get("targets", [])
-
-    if request.target in current_targets:
-        return {
-            "message": "Target already exists",
-            "count": len(current_targets),
-            "targets": current_targets,
-            "prometheus_reloaded": False,
-        }
-
-    updated_targets = unique_preserve_order(current_targets + [request.target])
-    save_targets(TARGET_FILES[request.type], LABEL_MAP[request.type], updated_targets)
-
-    await reload_prometheus()
+    added = add_to_list(request.type, request.target)
+    if added and request.type in JOB_MAP:
+        await reload_prometheus()
 
     return {
-        "message": "Target added successfully",
-        "count": len(updated_targets),
-        "targets": updated_targets,
-        "prometheus_reloaded": True,
+        "message": "Target added successfully" if added else "Target already exists",
+        "count": len(load_targets(TARGET_FILES[request.type])["targets"]),
+        "targets": load_targets(TARGET_FILES[request.type])["targets"],
+        "prometheus_reloaded": added and request.type in JOB_MAP,
     }
 
 
 @app.delete("/targets/remove")
 async def remove_target(request: SingleTargetRequest):
-    current_data = load_targets(TARGET_FILES[request.type])
-    current_targets = current_data.get("targets", [])
-
-    if request.target not in current_targets:
+    if not remove_from_list(request.type, request.target):
         raise HTTPException(status_code=404, detail="Target not found")
 
-    updated_targets = [target for target in current_targets if target != request.target]
-    save_targets(TARGET_FILES[request.type], LABEL_MAP[request.type], updated_targets)
+    if request.type in JOB_MAP:
+        await reload_prometheus()
 
-    await reload_prometheus()
-
+    remaining = load_targets(TARGET_FILES[request.type])["targets"]
     return {
         "message": "Target removed successfully",
-        "count": len(updated_targets),
-        "targets": updated_targets,
-        "prometheus_reloaded": True,
+        "count": len(remaining),
+        "targets": remaining,
+        "prometheus_reloaded": request.type in JOB_MAP,
     }
 
 
@@ -370,6 +520,117 @@ async def manual_reload():
         "message": "Prometheus reloaded successfully",
         "prometheus_reloaded": True,
     }
+
+
+# ── JSON-API für das GitHub-Pages-Dashboard (Login erforderlich) ──
+
+api = APIRouter(prefix="/api", dependencies=[Depends(require_user)])
+
+
+@api.get("/me")
+def api_me(user: str = Depends(require_user)):
+    return {"user": user, "countries": COUNTRIES}
+
+
+@api.get("/targets/status")
+async def api_targets_status():
+    return {
+        "blackbox": await build_ui_targets_data(),
+        "geo": geo_collector.snapshot(),
+    }
+
+
+@api.post("/targets")
+async def api_add_target(request: TargetCreateRequest):
+    # Erst alles prüfen, dann speichern, damit ein ungültiger Typ nichts halb anlegt
+    planned = []
+    for target_type in unique_preserve_order(request.types):
+        value = derive_target(request.target, target_type)
+        validate_by_type(target_type, value)
+        planned.append((target_type, value))
+
+    results = [
+        {"type": target_type, "target": value, "added": add_to_list(target_type, value)}
+        for target_type, value in planned
+    ]
+
+    if any(item["added"] and item["type"] in JOB_MAP for item in results):
+        await reload_prometheus()
+
+    return {"results": results}
+
+
+@api.delete("/targets")
+async def api_remove_target(type: TargetType, target: str):
+    if not remove_from_list(type, target):
+        raise HTTPException(status_code=404, detail="Ziel nicht gefunden")
+
+    if type in JOB_MAP:
+        await reload_prometheus()
+
+    return {"removed": {"type": type, "target": target}}
+
+
+@api.get("/geo/status")
+def api_geo_status():
+    return geo_collector.status()
+
+
+@api.get("/geo/series")
+async def api_geo_series(target: str, range: str = "6h"):
+    if target not in get_geo_targets():
+        raise HTTPException(status_code=404, detail="Kein Länder-Check für dieses Ziel")
+    if range not in GEO_RANGES:
+        raise HTTPException(status_code=400, detail=f"Zeitraum muss einer von {', '.join(GEO_RANGES)} sein")
+
+    seconds, step = GEO_RANGES[range]
+    end = time.time()
+    selector = f'{{target="{promql_escape(target)}"}}'
+
+    series_raw, avg_raw, availability_raw = await asyncio.gather(
+        query_prometheus_range(
+            f"avg_over_time(netpulse_geo_duration_ms{selector}[{step}s])",
+            end - seconds,
+            end,
+            step,
+        ),
+        query_prometheus(f"avg_over_time(netpulse_geo_duration_ms{selector}[{range}])"),
+        query_prometheus(f"avg_over_time(netpulse_geo_success{selector}[{range}])"),
+    )
+
+    countries = {
+        code: {"code": code, "values": [], "avg": None, "availability": None}
+        for code in COUNTRIES
+    }
+
+    for item in series_raw:
+        entry = countries.get(item.get("metric", {}).get("country"))
+        if entry is None:
+            continue
+        for ts, raw in item.get("values", []):
+            value = finite_or_none(raw)
+            if value is not None:
+                entry["values"].append({"t": int(float(ts) * 1000), "v": value})
+
+    for item in avg_raw:
+        entry = countries.get(item.get("metric", {}).get("country"))
+        if entry is not None:
+            entry["avg"] = finite_or_none(item["value"][1])
+
+    for item in availability_raw:
+        entry = countries.get(item.get("metric", {}).get("country"))
+        if entry is not None:
+            entry["availability"] = finite_or_none(item["value"][1], factor=100)
+
+    return {
+        "target": target,
+        "range": range,
+        "step_s": step,
+        "countries": list(countries.values()),
+    }
+
+
+app.include_router(api)
 
 
 def extract_domain(target: str) -> str:
@@ -436,6 +697,8 @@ def collect_all_domains() -> list[str]:
     return domains
 
 
+# Ohne App-Login: Grafana (Infinity) ruft diese intern über app:8000 auf,
+# von außen schützt Caddy die Pfade per Basic Auth.
 @app.get("/api/whois")
 def api_whois_all():
     domains = collect_all_domains()
@@ -479,17 +742,9 @@ async def ui_add_target(
         request_data = SingleTargetRequest(type=actual_type, target=target)
         validate_by_type(request_data.type, request_data.target)
 
-        current_data = load_targets(TARGET_FILES[request_data.type])
-        current_targets = current_data.get("targets", [])
-
-        if request_data.target not in current_targets:
-            updated_targets = unique_preserve_order(current_targets + [request_data.target])
-            save_targets(
-                TARGET_FILES[request_data.type],
-                LABEL_MAP[request_data.type],
-                updated_targets,
-            )
-            await reload_prometheus()
+        if add_to_list(request_data.type, request_data.target):
+            if request_data.type in JOB_MAP:
+                await reload_prometheus()
             message = f"Target '{request_data.target}' wurde hinzugefügt."
         else:
             message = f"Target '{request_data.target}' existiert bereits."
@@ -508,23 +763,14 @@ async def ui_remove_target(
     try:
         request_data = SingleTargetRequest(type=target_type, target=target)
 
-        current_data = load_targets(TARGET_FILES[request_data.type])
-        current_targets = current_data.get("targets", [])
-
-        if request_data.target not in current_targets:
+        if not remove_from_list(request_data.type, request_data.target):
             return RedirectResponse(
                 url="/ui?error=Target+nicht+gefunden",
                 status_code=303,
             )
 
-        updated_targets = [item for item in current_targets if item != request_data.target]
-        save_targets(
-            TARGET_FILES[request_data.type],
-            LABEL_MAP[request_data.type],
-            updated_targets,
-        )
-
-        await reload_prometheus()
+        if request_data.type in JOB_MAP:
+            await reload_prometheus()
 
         message = f"Target '{request_data.target}' wurde entfernt."
         return RedirectResponse(url=f"/ui?message={quote_plus(message)}", status_code=303)

@@ -7,6 +7,11 @@ scrape_configs:
     static_configs:
       - targets: ["prometheus:9090"]
 
+  # Länder-Erreichbarkeit (Globalping-Collector in der App)
+  - job_name: "netpulse_geo"
+    static_configs:
+      - targets: ["app:8000"]
+
   - job_name: "blackbox_http"
     metrics_path: /probe
     params:

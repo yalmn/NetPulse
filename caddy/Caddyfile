@@ -1,0 +1,39 @@
+# NetPulse Reverse Proxy
+# TLS-Zertifikat kommt automatisch von Let's Encrypt (bei PUBLIC_HOST=localhost
+# nutzt Caddy ein lokales Zertifikat, praktisch zum Testen).
+
+{$PUBLIC_HOST} {
+	encode gzip
+
+	# Prometheus-Metriken der App nur intern
+	handle /metrics* {
+		respond 404
+	}
+
+	# JSON-API für das GitHub-Pages-Dashboard: Login und CORS macht die App selbst,
+	# damit der Browser bei falschem Passwort eine saubere 401 mit CORS-Headern bekommt.
+	@api {
+		path /api/*
+		not path /api/whois /api/nslookup
+	}
+	handle @api {
+		reverse_proxy app:8000
+	}
+
+	# Alles andere (Grafana, alte Web-UI, API-Doku, WHOIS/DNS) per Basic Auth
+	handle {
+		basic_auth {
+			{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+		}
+
+		handle /grafana* {
+			# Grafana vertraut diesem Header (auth.proxy), vom Client gesendete Werte werden überschrieben
+			request_header X-WEBAUTH-USER {http.auth.user.id}
+			reverse_proxy grafana:3000
+		}
+
+		handle {
+			reverse_proxy app:8000
+		}
+	}
+}

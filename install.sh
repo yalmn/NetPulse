@@ -17,6 +17,17 @@ info()  { echo -e "${GREEN}[INFO]${NC}  $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 
+# --- Eingabe auch bei curl | bash ueber /dev/tty lesen ---
+ask() {
+    local prompt="$1" answer=""
+    if [ -t 0 ]; then
+        read -rp "$prompt" answer
+    else
+        read -rp "$prompt" answer < /dev/tty || answer=""
+    fi
+    echo "$answer"
+}
+
 # --- Docker pruefen / installieren ---
 check_docker() {
     if command -v docker &>/dev/null; then
@@ -72,6 +83,25 @@ sed_inplace() {
     fi
 }
 
+# --- Variable in .env setzen (ersetzen oder anhaengen) ---
+set_env() {
+    local key="$1" value="$2"
+    if grep -q "^${key}=" .env; then
+        sed_inplace "s|^${key}=.*|${key}=${value}|" .env
+    else
+        echo "${key}=${value}" >> .env
+    fi
+}
+
+# --- Oeffentliche IP als sslip.io-Hostname vorschlagen ---
+suggest_host() {
+    local ip
+    ip=$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)
+    if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "${ip//./-}.sslip.io"
+    fi
+}
+
 # --- .env erstellen ---
 setup_env() {
     if [ ! -f ".env" ]; then
@@ -82,29 +112,49 @@ setup_env() {
     # Passwort generieren falls leer oder nicht gesetzt
     source .env
     if [ -z "${GF_ADMIN_PASSWORD:-}" ]; then
-        GF_GENERATED_PW=$(generate_password)
-        sed_inplace "s/^GF_ADMIN_PASSWORD=.*/GF_ADMIN_PASSWORD=${GF_GENERATED_PW}/" .env
-        info "Grafana-Passwort wurde automatisch generiert."
+        set_env GF_ADMIN_PASSWORD "$(generate_password)"
+        info "Passwort wurde automatisch generiert."
+    fi
+
+    # Oeffentlicher Hostname fuer HTTPS (Let's Encrypt)
+    source .env
+    if [ -z "${PUBLIC_HOST:-}" ]; then
+        local suggestion custom_host
+        suggestion=$(suggest_host)
+        echo ""
+        info "Hostname fuer HTTPS. Ohne eigene Domain den sslip.io-Vorschlag uebernehmen."
+        custom_host=$(ask "Hostname [${suggestion:-z. B. netpulse.example.de}]: ")
+        custom_host="${custom_host:-$suggestion}"
+        [ -z "$custom_host" ] && error "Kein Hostname angegeben."
+        set_env PUBLIC_HOST "$custom_host"
+        info "Hostname: ${custom_host}"
+    fi
+
+    # Globalping-Token fuer die Laender-Checks (optional)
+    source .env
+    if [ -z "${GLOBALPING_TOKEN:-}" ]; then
+        echo ""
+        info "Globalping-Token (kostenlos auf https://dash.globalping.io) erhoeht das Limit fuer die Laender-Checks."
+        local token
+        token=$(ask "Globalping-Token [leer lassen = ohne Token]: ")
+        set_env GLOBALPING_TOKEN "$token"
     fi
 
     # Dashboard-Name abfragen falls noch Default
     source .env
     if [ "${DASHBOARD_TITLE:-}" = "Monitoring Dashboard" ] || [ -z "${DASHBOARD_TITLE:-}" ]; then
         echo ""
-        if [ -t 0 ]; then
-            read -rp "Dashboard-Name [Monitoring Dashboard]: " custom_title
-        else
-            read -rp "Dashboard-Name [Monitoring Dashboard]: " custom_title < /dev/tty || custom_title=""
-        fi
+        local custom_title
+        custom_title=$(ask "Dashboard-Name [Monitoring Dashboard]: ")
         custom_title="${custom_title:-Monitoring Dashboard}"
-        sed_inplace "s/^DASHBOARD_TITLE=.*/DASHBOARD_TITLE=\"${custom_title}\"/" .env
+        set_env DASHBOARD_TITLE "\"${custom_title}\""
         info "Dashboard-Name: ${custom_title}"
     fi
 }
 
 # --- Target-Dateien zuruecksetzen ---
 reset_targets() {
-    for f in prometheus/targets/urls.json prometheus/targets/https_urls.json prometheus/targets/icmp_targets.json; do
+    for f in prometheus/targets/urls.json prometheus/targets/https_urls.json prometheus/targets/icmp_targets.json prometheus/targets/geo_targets.json; do
         echo '[]' > "$f"
     done
     info "Target-Dateien zurueckgesetzt (leer)."
@@ -127,29 +177,31 @@ apply_dashboard_title() {
 # --- Services starten ---
 start_services() {
     info "Bestehende Container und Volumes werden entfernt..."
-    docker compose down -v 2>/dev/null || true
+    docker compose down -v --remove-orphans 2>/dev/null || true
 
     info "Services werden gebaut und gestartet..."
     docker compose up -d --build
 
+    local base="https://${PUBLIC_HOST}"
     echo ""
     info "========================================"
     info " NetPulse erfolgreich installiert!"
     info "========================================"
     echo ""
-    local HOST_IP
-    HOST_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo 'localhost')
-    info "Erreichbare Services (alle mit Basic Auth geschuetzt):"
-    info "  Web-UI:     http://${HOST_IP}:${APP_PORT:-8000}/ui"
-    info "  REST-API:   http://${HOST_IP}:${APP_PORT:-8000}/docs"
-    info "  Prometheus: http://${HOST_IP}:${PROMETHEUS_PORT:-9090}"
-    info "  Grafana:    http://${HOST_IP}:${GRAFANA_PORT:-3000}  (eigener Login)"
+    info "Server (im Dashboard beim Login eintragen): ${base}"
+    info "  Grafana:   ${base}/grafana/"
+    info "  Web-UI:    ${base}/ui"
+    info "  API-Doku:  ${base}/docs"
     echo ""
-    info "Login-Daten (Basic Auth + Grafana):"
+    info "Login-Daten (Dashboard, API und Grafana):"
     info "  User:     ${GF_ADMIN_USER:-admin}"
     info "  Passwort: ${GF_ADMIN_PASSWORD}"
     warn "Bitte Passwort notieren! Es wird nur einmalig angezeigt."
-    warn "Zum Aendern: GF_ADMIN_PASSWORD in .env anpassen und './install.sh' erneut ausfuehren."
+    echo ""
+    warn "Ports 80 und 443 muessen offen sein (bei Ionos: Cloud Panel, Netzwerk, Firewall-Richtlinien)."
+    warn "Das Zertifikat holt Caddy beim ersten Aufruf automatisch, das kann bis zu einer Minute dauern."
+    info "Dashboard: https://yalmn.github.io/NetPulse/ (Server-Adresse oben beim Login angeben,"
+    info "oder dauerhaft als \"apiBase\" in docs/config.json eintragen)."
     echo ""
 }
 
@@ -166,7 +218,7 @@ main() {
     reset_targets
     apply_dashboard_title
 
-    # .env laden fuer Port-Ausgabe
+    # .env laden fuer die Ausgabe
     if [ -f ".env" ]; then
         set -a
         source .env

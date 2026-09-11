@@ -14,56 +14,116 @@
       </svg>
       NetPulse
     </div>
-    <span class="meta" id="conn-status"></span>
+    <div class="topbar-right">
+      <span class="meta" id="conn-status"></span>
+      <span class="meta" id="user-info"></span>
+      <button class="btn btn-ghost btn-sm" id="logout-btn" hidden>Abmelden</button>
+    </div>
   </header>
 
   <main class="container">
-    <div class="page-header">
-      <div>
-        <h2>Monitoring Dashboard</h2>
-        <p>Healthchecks für HTTP, HTTPS und Ping via Globalping, plus Erreichbarkeit aus mehreren Ländern.</p>
+    <!-- Login -->
+    <section id="login-view" hidden>
+      <div class="card login-card">
+        <div class="card-header-bar"><h3>Anmelden</h3></div>
+        <form class="card-body login-form" id="login-form">
+          <div class="form-field">
+            <label for="login-server">Server (VPS)</label>
+            <input id="login-server" type="url" placeholder="https://1-2-3-4.sslip.io" required />
+          </div>
+          <div class="form-field">
+            <label for="login-user">Benutzer</label>
+            <input id="login-user" type="text" autocomplete="username" required />
+          </div>
+          <div class="form-field">
+            <label for="login-password">Passwort</label>
+            <input id="login-password" type="password" autocomplete="current-password" required />
+          </div>
+          <label class="chip chip-plain"><input type="checkbox" id="login-remember" /> Angemeldet bleiben</label>
+          <p class="form-msg err" id="login-error" hidden></p>
+          <button class="btn btn-primary" type="submit" id="login-submit">Anmelden</button>
+        </form>
       </div>
-      <div class="toolbar">
-        <button class="btn btn-ghost" id="pause-btn">Pause</button>
-      </div>
-    </div>
+    </section>
 
-    <!-- Einrichtung -->
-    <div class="card">
-      <div class="card-body">
-        <div class="dash-setup">
+    <!-- Dashboard -->
+    <section id="app-view" hidden>
+      <div class="page-header">
+        <div>
+          <h2>Monitoring Dashboard</h2>
+          <p>HTTP, HTTPS und Ping vom Server mit Grafana-Diagrammen, dazu die Ladezeit aus Deutschland, Frankreich und Japan.</p>
+        </div>
+      </div>
+
+      <!-- Ziel hinzufügen -->
+      <div class="card">
+        <form class="card-body" id="add-form">
           <div class="form-field target-field">
             <label for="target-input">Ziel hinzufügen (IP oder URL)</label>
             <div class="input-row">
-              <input id="target-input" type="text" placeholder="z. B. example.com oder 1.1.1.1" autocomplete="off" />
-              <button class="btn btn-primary" id="add-target">Hinzufügen</button>
+              <input id="target-input" type="text" placeholder="z. B. https://example.com oder 1.1.1.1" autocomplete="off" required />
+              <button class="btn btn-primary" type="submit" id="add-target">Hinzufügen</button>
             </div>
           </div>
+          <div class="type-toggles add-types">
+            <span class="picker-label">Checks</span>
+            <label class="chip"><input type="checkbox" name="type" value="http" /> HTTP</label>
+            <label class="chip"><input type="checkbox" name="type" value="https" /> HTTPS</label>
+            <label class="chip"><input type="checkbox" name="type" value="icmp" /> Ping</label>
+            <label class="chip"><input type="checkbox" name="type" value="geo" /> Länder-Check</label>
+          </div>
+          <p class="hint" id="geo-budget"></p>
+          <p class="form-msg" id="add-msg" hidden></p>
+        </form>
+      </div>
+
+      <div class="summary-bar" id="summary"></div>
+
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" data-tab="monitoring">Monitoring (Grafana)</button>
+        <button class="tab" role="tab" data-tab="geo">Länder-Erreichbarkeit</button>
+      </div>
+
+      <!-- Bereich 1: Monitoring -->
+      <div class="tab-panel" data-panel="monitoring">
+        <div class="card">
+          <div class="card-header-bar"><h3>Ziele</h3><span class="meta" id="targets-updated"></span></div>
+          <div id="target-table"><div class="empty-state">Wird geladen …</div></div>
         </div>
-        <p class="hint" id="rate-estimate"></p>
+        <div class="card">
+          <div class="card-header-bar">
+            <h3>Grafana</h3>
+            <a class="btn btn-ghost btn-sm" id="grafana-open" target="_blank" rel="noopener">In neuem Tab öffnen</a>
+          </div>
+          <p class="hint grafana-hint">Beim ersten Öffnen fragt der Browser nach denselben Zugangsdaten. Bleibt die Fläche leer, Grafana über den Button in einem neuen Tab öffnen.</p>
+          <iframe id="grafana-frame" class="grafana-frame" title="Grafana Dashboard"></iframe>
+        </div>
       </div>
-    </div>
 
-    <!-- Zusammenfassung -->
-    <div class="summary-bar" id="summary"></div>
-
-    <!-- Ziele -->
-    <div id="targets-grid"></div>
-
-    <!-- Widget: Länder-Erreichbarkeit -->
-    <div class="card">
-      <div class="card-header-bar">
-        <h3>Erreichbarkeit aus anderen Ländern</h3>
-        <span class="meta" id="country-updated"></span>
+      <!-- Bereich 2: Länder-Erreichbarkeit -->
+      <div class="tab-panel" data-panel="geo" hidden>
+        <div class="card">
+          <div class="card-header-bar">
+            <h3>Ladezeit aus Deutschland, Frankreich und Japan</h3>
+            <div class="toolbar">
+              <span class="meta" id="geo-status"></span>
+              <select id="geo-range" aria-label="Zeitraum">
+                <option value="1h">1 Stunde</option>
+                <option value="6h" selected>6 Stunden</option>
+                <option value="24h">24 Stunden</option>
+                <option value="7d">7 Tage</option>
+              </select>
+            </div>
+          </div>
+          <p class="hint grafana-hint">Messung über Globalping vom Server aus, unabhängig davon, ob dieser Tab offen ist. Gestrichelt: Durchschnitt im gewählten Zeitraum. Webseiten werden per HTTP(S) geladen, reine IP-Adressen gepingt.</p>
+        </div>
+        <div id="geo-grid"></div>
       </div>
-      <div class="card-body">
-        <div id="country-widget"><div class="empty-state">Wird geladen, sobald Ziele vorhanden sind.</div></div>
-      </div>
-    </div>
 
-    <footer>
-      Alle Checks via <a href="https://globalping.io" target="_blank" rel="noopener">Globalping</a>. Läuft direkt im Browser, solange dieser Tab geöffnet ist.
-    </footer>
+      <footer>
+        Messdaten: Blackbox Exporter und Prometheus auf dem Server, Länder-Checks via <a href="https://globalping.io" target="_blank" rel="noopener">Globalping</a>.
+      </footer>
+    </section>
   </main>
 
   <script src="chart.js"></script>

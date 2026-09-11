@@ -6,8 +6,10 @@ services:
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/targets:/etc/prometheus/targets:ro
+      - prometheus-data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}"
       - "--web.enable-lifecycle"
     depends_on:
       - blackbox
@@ -27,12 +29,23 @@ services:
     image: grafana/grafana:latest
     container_name: grafana
     restart: unless-stopped
-    ports:
-      - "${GRAFANA_PORT:-3000}:3000"
     environment:
       - GF_INSTALL_PLUGINS=yesoreyeram-infinity-datasource
       - GF_SECURITY_ADMIN_USER=${GF_ADMIN_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GF_ADMIN_PASSWORD:?GF_ADMIN_PASSWORD muss in .env gesetzt sein}
+      # Grafana läuft hinter Caddy unter /grafana
+      - GF_SERVER_ROOT_URL=https://${PUBLIC_HOST:?PUBLIC_HOST muss in .env gesetzt sein}:${HTTPS_PORT:-443}/grafana/
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+      # Einbettung ins GitHub-Pages-Dashboard (iframe)
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_SECURITY_COOKIE_SAMESITE=none
+      - GF_SECURITY_COOKIE_SECURE=true
+      # Login übernimmt Caddy (Basic Auth), Grafana liest den Benutzer aus dem Header
+      - GF_AUTH_PROXY_ENABLED=true
+      - GF_AUTH_PROXY_HEADER_NAME=X-WEBAUTH-USER
+      - GF_AUTH_PROXY_HEADER_PROPERTY=username
+      - GF_AUTH_PROXY_AUTO_SIGN_UP=true
+      - GF_USERS_AUTO_ASSIGN_ORG_ROLE=Viewer
     volumes:
       - grafana-storage:/var/lib/grafana
       - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
@@ -45,26 +58,38 @@ services:
     build: ./app
     container_name: netpulse-api
     restart: unless-stopped
+    environment:
+      - NETPULSE_USER=${GF_ADMIN_USER:-admin}
+      - NETPULSE_PASSWORD=${GF_ADMIN_PASSWORD:?GF_ADMIN_PASSWORD muss in .env gesetzt sein}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://yalmn.github.io}
+      - GLOBALPING_TOKEN=${GLOBALPING_TOKEN:-}
+      - GEO_COUNTRIES=${GEO_COUNTRIES:-DE,FR,JP}
     volumes:
       - ./prometheus/targets:/data
     depends_on:
       - prometheus
 
-  nginx:
-    build: ./nginx
-    container_name: netpulse-nginx
+  caddy:
+    build: ./caddy
+    container_name: netpulse-caddy
     restart: unless-stopped
     ports:
-      - "${APP_PORT:-8000}:8000"
-      - "${PROMETHEUS_PORT:-9090}:9090"
-      - "${BLACKBOX_PORT:-9115}:9115"
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp"
     environment:
+      - PUBLIC_HOST=${PUBLIC_HOST:?PUBLIC_HOST muss in .env gesetzt sein}
       - BASIC_AUTH_USER=${GF_ADMIN_USER:-admin}
       - BASIC_AUTH_PASSWORD=${GF_ADMIN_PASSWORD:?GF_ADMIN_PASSWORD muss in .env gesetzt sein}
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
     depends_on:
       - app
-      - prometheus
-      - blackbox
+      - grafana
 
 volumes:
   grafana-storage:
+  prometheus-data:
+  caddy-data:
+  caddy-config:
