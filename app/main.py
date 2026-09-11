@@ -22,7 +22,7 @@ import httpx
 import whois
 import dns.resolver
 
-from geo import COUNTRIES, GeoCollector
+from geo import COUNTRIES, GeoCollector, is_ip
 
 PROMETHEUS_RELOAD_URL = "http://prometheus:9090/-/reload"
 PROMETHEUS_QUERY_URL = "http://prometheus:9090/api/v1/query"
@@ -63,10 +63,6 @@ GEO_RANGES = {
     "24h": (24 * 3600, 300),
     "7d": (7 * 24 * 3600, 1800),
 }
-
-HOSTNAME_REGEX = re.compile(
-    r"^(?=.{1,253}$)(?!-)([a-zA-Z0-9-]{1,63}\.)*[a-zA-Z0-9-]{1,63}$"
-)
 
 TargetType = Literal["http", "https", "icmp", "geo"]
 
@@ -172,18 +168,13 @@ def validate_http_target(target: str, expected_scheme: str | None = None) -> Non
         raise HTTPException(status_code=400, detail="Invalid URL")
 
 
-def validate_icmp_target(target: str) -> None:
-    try:
-        ipaddress.ip_address(target)
-        return
-    except ValueError:
-        pass
+ICMP_ONLY_IP = "Ping (ICMP) ist nur für IP-Adressen möglich, URLs werden per HTTP/HTTPS geprüft"
 
-    if not HOSTNAME_REGEX.match(target):
-        raise HTTPException(
-            status_code=400,
-            detail="ICMP target must be a valid IP address or hostname",
-        )
+
+def validate_icmp_target(target: str) -> None:
+    # Webseiten werden ausschließlich per HTTP/HTTPS geprüft, Ping nur bei IP-Adressen
+    if not is_ip(target):
+        raise HTTPException(status_code=400, detail=ICMP_ONLY_IP)
 
 
 def validate_by_type(target_type: str, target: str) -> None:
@@ -196,8 +187,11 @@ def validate_by_type(target_type: str, target: str) -> None:
     elif target_type == "geo":
         if target.startswith(("http://", "https://")):
             validate_http_target(target)
-        else:
-            validate_icmp_target(target)
+        elif not is_ip(target):
+            raise HTTPException(
+                status_code=400,
+                detail="Länder-Check braucht eine URL (http/https) oder eine IP-Adresse",
+            )
     else:
         raise HTTPException(status_code=400, detail="Invalid target type")
 
@@ -542,6 +536,10 @@ async def api_targets_status():
 
 @api.post("/targets")
 async def api_add_target(request: TargetCreateRequest):
+    # Ping nur, wenn die Eingabe selbst eine IP ist (nicht der Host einer URL)
+    if "icmp" in request.types and not is_ip(request.target.strip()):
+        raise HTTPException(status_code=400, detail=ICMP_ONLY_IP)
+
     # Erst alles prüfen, dann speichern, damit ein ungültiger Typ nichts halb anlegt
     planned = []
     for target_type in unique_preserve_order(request.types):

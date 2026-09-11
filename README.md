@@ -1,6 +1,6 @@
 # NetPulse
 
-Monitoring für URLs und IP-Adressen: Analysten tragen Ziele über ein Dashboard auf GitHub Pages ein, ein Server (VPS) misst HTTP, HTTPS und Ping und zeigt die Verläufe in Grafana. Zusätzlich wird die Ladezeit aus Deutschland, Frankreich und Japan minütlich gemessen und als Liniendiagramm dargestellt.
+Monitoring für URLs und IP-Adressen: Analysten tragen Ziele über ein Dashboard auf GitHub Pages ein, ein Server (VPS) misst HTTP, HTTPS und Ping und zeigt die Verläufe in Grafana. URLs werden ausschließlich per HTTP/HTTPS geprüft, Ping (ICMP) gibt es nur für IP-Adressen. Zusätzlich wird die Ladezeit aus Deutschland, Frankreich und Japan minütlich gemessen und als Liniendiagramm dargestellt.
 
 ## Architektur
 
@@ -85,7 +85,12 @@ Alle Aufrufe unter `/api` brauchen Basic Auth:
 # Ziel mit mehreren Checks anlegen (http, https, icmp, geo)
 curl -u admin:PASSWORT -X POST https://HOST/api/targets \
   -H "Content-Type: application/json" \
-  -d '{"target": "example.com", "types": ["https", "icmp", "geo"]}'
+  -d '{"target": "https://example.com", "types": ["https", "geo"]}'
+
+# IP-Adresse pingen (icmp nur für IPs)
+curl -u admin:PASSWORT -X POST https://HOST/api/targets \
+  -H "Content-Type: application/json" \
+  -d '{"target": "1.1.1.1", "types": ["icmp", "geo"]}'
 
 # Status aller Ziele
 curl -u admin:PASSWORT https://HOST/api/targets/status

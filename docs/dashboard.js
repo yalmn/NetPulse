@@ -172,7 +172,16 @@ function suggestTypes(value) {
   if (/^https:\/\//i.test(v)) return ["https"];
   if (/^http:\/\//i.test(v)) return ["http"];
   if (isIp(v)) return ["icmp"];
-  return v ? ["https", "icmp"] : [];
+  return v ? ["https"] : [];
+}
+
+// Ping (ICMP) nur für IP-Adressen, URLs und Hostnamen werden per HTTP/HTTPS geprüft
+function syncPingBox() {
+  const ping = typeBoxes.find((b) => b.value === "icmp");
+  const ip = isIp(targetInput.value.trim());
+  ping.disabled = !ip;
+  if (!ip) ping.checked = false;
+  ping.closest("label").title = ip ? "" : "Ping nur für IP-Adressen";
 }
 
 function selectedTypes() {
@@ -180,6 +189,7 @@ function selectedTypes() {
 }
 
 targetInput.addEventListener("input", () => {
+  syncPingBox();
   if (typesTouched) return;
   const suggested = suggestTypes(targetInput.value);
   typeBoxes.forEach((b) => { if (b.value !== "geo") b.checked = suggested.includes(b.value); });
@@ -208,6 +218,7 @@ addForm.addEventListener("submit", async (e) => {
     targetInput.value = "";
     typesTouched = false;
     typeBoxes.forEach((b) => (b.checked = false));
+    syncPingBox();
     await refreshStatus();
     if (activeTab === "geo") refreshSeries();
   } catch (err) {
@@ -461,6 +472,7 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", (
 // ── Init ──
 async function init() {
   try { config = { ...config, ...(await (await fetch("config.json", { cache: "no-store" })).json()) }; } catch (_) {}
+  syncPingBox();
   const savedRange = localStorage.getItem(LS_RANGE);
   if (savedRange) geoRange.value = savedRange;
   try { auth = JSON.parse(localStorage.getItem(LS_AUTH) || sessionStorage.getItem(LS_AUTH)); } catch (_) { auth = null; }
