@@ -13,7 +13,7 @@ Analyst ─► GitHub Pages (docs/, statisch)
               ▼                                  ▼
         FastAPI ──reload──► Prometheus ◄──── Grafana
           │ /metrics ◄─scrape─┘    └─scrape─► Blackbox Exporter (HTTP/HTTPS/ICMP)
-          └─ Geo-Collector ──► Globalping (DE, FR, JP)
+          └─ Geo-Collector ──► Globalping (FR, JP), DE misst der VPS selbst
 ```
 
 | Service           | Aufgabe                                                        |
@@ -29,7 +29,11 @@ Das Dashboard hat zwei Bereiche:
 1. **Monitoring (Grafana):** Zielliste mit Status sowie das Grafana-Dashboard mit Phasenverlauf (DNS, Connect, TLS, Processing, Transfer), Probe-Dauer, WHOIS und DNS.
 2. **Länder-Erreichbarkeit:** pro Ziel ein Liniendiagramm (x = Zeit, y = Ladezeit in ms) mit einer Linie je Land, der Durchschnitt ist gestrichelt eingezeichnet. Webseiten werden per HTTP(S) geladen, reine IP-Adressen gepingt.
 
-Die Länder-Checks laufen über [Globalping](https://globalping.io) vom Server aus, also auch dann, wenn kein Browser offen ist. Pro Ziel und Runde kostet das drei Tests (ein Test je Land). Mit kostenlosem Globalping-Token stehen 500 Tests pro Stunde zur Verfügung: bis zu zwei Ziele werden minütlich gemessen, bei mehr Zielen verlängert sich der Takt automatisch. Das Dashboard zeigt den aktuellen Takt an.
+Deutschland misst der VPS selbst über den Blackbox Exporter (alle 15 Sekunden, ohne Kontingent). Frankreich und Japan laufen über [Globalping](https://globalping.io) vom Server aus, also auch dann, wenn kein Browser offen ist. Beim Anlegen eines Länder-Checks wird der passende HTTP/HTTPS- bzw. Ping-Check für die DE-Linie automatisch mit angelegt.
+
+Pro Ziel und Runde kostet das zwei Globalping-Tests (FR und JP). Mit kostenlosem Globalping-Token stehen 500 Tests pro Stunde zur Verfügung: bis zu drei Ziele werden minütlich gemessen, bei mehr Zielen verlängert sich der Takt automatisch. Das Dashboard zeigt den aktuellen Takt an.
+
+Für konsistente Daten wird jede gescheiterte Messung als Lücke gespeichert, nie als alter Wert. Jedes Land wird einzeln gemessen, Netzwerkfehler werden einmal wiederholt, und ein Wächter startet die Messschleife neu, falls sie abbricht oder hängt. Liegt die letzte Messung zu lange zurück, zeigt das Dashboard eine Warnung.
 
 ## Setup auf dem VPS
 
@@ -72,7 +76,8 @@ Alle Einstellungen liegen in `.env` (wird beim Setup automatisch erzeugt):
 | `GF_ADMIN_PASSWORD`    | *generiert*               | Login-Passwort                                |
 | `ALLOWED_ORIGINS`      | https://yalmn.github.io   | Wer die API aus dem Browser aufrufen darf     |
 | `GLOBALPING_TOKEN`     | leer                      | Höheres Limit für die Länder-Checks           |
-| `GEO_COUNTRIES`        | DE,FR,JP                  | Länder für die Länder-Checks                  |
+| `GEO_COUNTRIES`        | FR,JP                     | Länder für Globalping                         |
+| `VPS_COUNTRY`          | DE                        | Land des VPS, misst der Blackbox Exporter     |
 | `PROMETHEUS_RETENTION` | 30d                       | Aufbewahrung der Messdaten                    |
 | `HTTP_PORT` / `HTTPS_PORT` | 80 / 443              | Ports von Caddy                               |
 | `DASHBOARD_TITLE`      | Monitoring Dashboard      | Titel des Grafana-Dashboards                  |

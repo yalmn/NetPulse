@@ -111,12 +111,13 @@
               <select id="geo-range" aria-label="Zeitraum">
                 <option value="1h">1 Stunde</option>
                 <option value="6h" selected>6 Stunden</option>
+                <option value="12h">12 Stunden</option>
                 <option value="24h">24 Stunden</option>
                 <option value="7d">7 Tage</option>
               </select>
             </div>
           </div>
-          <p class="hint grafana-hint">Messung über Globalping vom Server aus, unabhängig davon, ob dieser Tab offen ist. Gestrichelt: Durchschnitt im gewählten Zeitraum. Webseiten werden per HTTP(S) geladen, reine IP-Adressen gepingt.</p>
+          <p class="hint grafana-hint">Deutschland misst der Server selbst (Blackbox Exporter), Frankreich und Japan kommen über Globalping. Die Messung läuft auf dem Server, unabhängig davon, ob dieser Tab offen ist. Gestrichelt: Durchschnitt im gewählten Zeitraum. Webseiten werden per HTTP(S) geladen, reine IP-Adressen gepingt. Lücken bedeuten: keine gültige Messung.</p>
         </div>
         <div id="geo-grid"></div>
       </div>

@@ -22,7 +22,7 @@ import httpx
 import whois
 import dns.resolver
 
-from geo import COUNTRIES, GeoCollector, is_ip
+from geo import COUNTRIES, VPS_COUNTRY, GeoCollector, is_ip
 
 PROMETHEUS_RELOAD_URL = "http://prometheus:9090/-/reload"
 PROMETHEUS_QUERY_URL = "http://prometheus:9090/api/v1/query"
@@ -60,6 +60,7 @@ JOB_MAP = {
 GEO_RANGES = {
     "1h": (3600, 60),
     "6h": (6 * 3600, 120),
+    "12h": (12 * 3600, 60),
     "24h": (24 * 3600, 300),
     "7d": (7 * 24 * 3600, 1800),
 }
@@ -71,12 +72,27 @@ def get_geo_targets() -> List[str]:
     return load_targets(TARGET_FILES["geo"]).get("targets", [])
 
 
+def vps_check_for(geo_target: str) -> tuple[str, str]:
+    """Das Land VPS_COUNTRY misst der VPS selbst: IP per Ping, URL per HTTP bzw. HTTPS."""
+    if is_ip(geo_target):
+        return "icmp", geo_target
+    return ("http" if geo_target.startswith("http://") else "https"), geo_target
+
+
+def ensure_vps_checks() -> None:
+    # Jeder Länder-Check braucht den passenden Blackbox-Check für die Linie des VPS-Landes
+    for target in get_geo_targets():
+        check_type, value = vps_check_for(target)
+        add_to_list(check_type, value)
+
+
 geo_collector = GeoCollector(get_geo_targets)
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    task = asyncio.create_task(geo_collector.run())
+    ensure_vps_checks()
+    task = asyncio.create_task(geo_collector.supervise())
     try:
         yield
     finally:
@@ -523,15 +539,35 @@ api = APIRouter(prefix="/api", dependencies=[Depends(require_user)])
 
 @api.get("/me")
 def api_me(user: str = Depends(require_user)):
-    return {"user": user, "countries": COUNTRIES}
+    return {"user": user, "countries": [VPS_COUNTRY] + COUNTRIES}
+
+
+def vps_result(row: dict | None) -> dict | None:
+    if row is None or row["status"] == "unknown":
+        return None
+    up = row["status"] == "up"
+    duration = row.get("probe_duration_seconds")
+    return {
+        "up": up,
+        "ms": round(duration * 1000, 1) if up and duration is not None else None,
+        "code": None,
+        "source": "vps",
+    }
 
 
 @api.get("/targets/status")
 async def api_targets_status():
-    return {
-        "blackbox": await build_ui_targets_data(),
-        "geo": geo_collector.snapshot(),
-    }
+    blackbox = await build_ui_targets_data()
+    geo = geo_collector.snapshot()
+
+    # Aktueller Wert für das VPS-Land kommt aus dem Blackbox Exporter
+    for entry in geo:
+        check_type, value = vps_check_for(entry["target"])
+        rows = blackbox.get(check_type, {}).get("targets", [])
+        row = next((item for item in rows if item["value"] == value), None)
+        entry["countries"] = {VPS_COUNTRY: vps_result(row), **entry["countries"]}
+
+    return {"blackbox": blackbox, "geo": geo}
 
 
 @api.post("/targets")
@@ -546,6 +582,11 @@ async def api_add_target(request: TargetCreateRequest):
         value = derive_target(request.target, target_type)
         validate_by_type(target_type, value)
         planned.append((target_type, value))
+
+    # Länder-Check: das VPS-Land misst der Blackbox Exporter, der passende Check kommt automatisch dazu
+    for target_type, value in list(planned):
+        if target_type == "geo" and vps_check_for(value) not in planned:
+            planned.append(vps_check_for(value))
 
     results = [
         {"type": target_type, "target": value, "added": add_to_list(target_type, value)}
@@ -585,7 +626,15 @@ async def api_geo_series(target: str, range: str = "6h"):
     end = time.time()
     selector = f'{{target="{promql_escape(target)}"}}'
 
-    series_raw, avg_raw, availability_raw = await asyncio.gather(
+    # VPS-Land aus dem Blackbox Exporter: nur erfolgreiche Proben, in ms
+    check_type, instance = vps_check_for(target)
+    vps_selector = f'{{job="{JOB_MAP[check_type]}",instance="{promql_escape(instance)}"}}'
+    vps_ok = f"(probe_duration_seconds{vps_selector} and on(instance, job) (probe_success{vps_selector} == 1))"
+
+    (
+        series_raw, avg_raw, availability_raw,
+        vps_series_raw, vps_avg_raw, vps_availability_raw,
+    ) = await asyncio.gather(
         query_prometheus_range(
             f"avg_over_time(netpulse_geo_duration_ms{selector}[{step}s])",
             end - seconds,
@@ -594,10 +643,24 @@ async def api_geo_series(target: str, range: str = "6h"):
         ),
         query_prometheus(f"avg_over_time(netpulse_geo_duration_ms{selector}[{range}])"),
         query_prometheus(f"avg_over_time(netpulse_geo_success{selector}[{range}])"),
+        query_prometheus_range(f"avg_over_time({vps_ok}[{step}s:15s]) * 1000", end - seconds, end, step),
+        query_prometheus(f"avg_over_time({vps_ok}[{range}:15s]) * 1000"),
+        query_prometheus(f"avg_over_time(probe_success{vps_selector}[{range}]) * 100"),
     )
 
+    vps_entry = {"code": VPS_COUNTRY, "source": "vps", "values": [], "avg": None, "availability": None}
+    for item in vps_series_raw[:1]:
+        for ts, raw in item.get("values", []):
+            value = finite_or_none(raw)
+            if value is not None:
+                vps_entry["values"].append({"t": int(float(ts) * 1000), "v": value})
+    if vps_avg_raw:
+        vps_entry["avg"] = finite_or_none(vps_avg_raw[0]["value"][1])
+    if vps_availability_raw:
+        vps_entry["availability"] = finite_or_none(vps_availability_raw[0]["value"][1])
+
     countries = {
-        code: {"code": code, "values": [], "avg": None, "availability": None}
+        code: {"code": code, "source": "globalping", "values": [], "avg": None, "availability": None}
         for code in COUNTRIES
     }
 
@@ -624,7 +687,7 @@ async def api_geo_series(target: str, range: str = "6h"):
         "target": target,
         "range": range,
         "step_s": step,
-        "countries": list(countries.values()),
+        "countries": [vps_entry] + list(countries.values()),
     }
 
 

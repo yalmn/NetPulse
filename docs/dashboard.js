@@ -22,7 +22,7 @@ let config = {
   grafanaPath: "/grafana/d/blackbox-monitoring-overview/?orgId=1&kiosk&refresh=30s",
   refreshSec: 15,
   countries: [
-    { code: "DE", name: "Deutschland" },
+    { code: "DE", name: "Deutschland (VPS)" },
     { code: "FR", name: "Frankreich" },
     { code: "JP", name: "Japan" },
   ],
@@ -400,6 +400,12 @@ function renderGeoStatus() {
   if (!geoStatus) { el.textContent = ""; return; }
   if (geoStatus.paused_for_s > 0) {
     el.textContent = `Globalping-Limit erreicht, weiter in ${Math.ceil(geoStatus.paused_for_s / 60)} min`;
+    el.className = "meta err";
+    return;
+  }
+  if (geoStatus.healthy === false) {
+    const age = geoStatus.last_success_age_s != null ? ` seit ${Math.ceil(geoStatus.last_success_age_s / 60)} min` : "";
+    el.textContent = `Keine aktuellen Messungen aus FR/JP${age}`;
     el.className = "meta err";
     return;
   }

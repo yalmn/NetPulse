@@ -4,7 +4,7 @@
   "grafanaPath": "/grafana/d/blackbox-monitoring-overview/?orgId=1&kiosk&refresh=30s",
   "refreshSec": 15,
   "countries": [
-    { "code": "DE", "name": "Deutschland" },
+    { "code": "DE", "name": "Deutschland (VPS)" },
     { "code": "FR", "name": "Frankreich" },
     { "code": "JP", "name": "Japan" }
   ]

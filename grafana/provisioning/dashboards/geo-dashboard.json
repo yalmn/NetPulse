@@ -24,6 +24,12 @@
           "expr": "netpulse_geo_duration_ms{target=~\"$target\"}",
           "legendFormat": "{{country}} {{target}}",
           "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "(probe_duration_seconds{instance=~\"$target\"} and on(instance, job) (probe_success{instance=~\"$target\"} == 1)) * 1000",
+          "legendFormat": "DE (VPS) {{instance}}",
+          "refId": "B"
         }
       ],
       "title": "Ladezeit je Land (ms)",
@@ -57,6 +63,13 @@
           "legendFormat": "{{country}} {{target}}",
           "instant": true,
           "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "avg_over_time(probe_success{instance=~\"$target\"}[$__range]) * 100",
+          "legendFormat": "DE (VPS) {{instance}}",
+          "instant": true,
+          "refId": "B"
         }
       ],
       "title": "Verfügbarkeit im Zeitraum",
