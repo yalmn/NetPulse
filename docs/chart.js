@@ -46,14 +46,18 @@
     }
 
     const W = 760, H = 220;
-    const m = { top: 12, right: 76, bottom: 26, left: 46 };
+    const m = { top: 24, right: 76, bottom: 26, left: 46 };
     const pw = W - m.left - m.right, ph = H - m.top - m.bottom;
     const tMin = tAll[0], tMax = tAll[tAll.length - 1];
     const tSpan = tMax - tMin || 1;
     const withDate = tSpan > 24 * 3600 * 1000;
 
+    // refLines: [{ v, color }] gestrichelte Referenzlinien, z. B. Durchschnitt je Serie
+    const refLines = (opts.refLines || []).filter((r) => typeof r.v === "number");
+
     let maxV = 0;
     for (const map of maps) for (const v of map.values()) maxV = Math.max(maxV, v);
+    for (const r of refLines) maxV = Math.max(maxV, r.v);
     const yMax = niceMax(maxV);
 
     const xOf = (t) => m.left + ((t - tMin) / tSpan) * pw;
@@ -71,7 +75,12 @@
     for (const t of [tMin, tMin + tSpan / 2, tMax]) {
       svg.appendChild(el("text", { x: xOf(t), y: H - 8, class: "axis-label", "text-anchor": "middle" }, fmtTime(t, withDate)));
     }
-    svg.appendChild(el("text", { x: 4, y: m.top + 4, class: "axis-label", "text-anchor": "start" }, unit));
+    // Einheit über der obersten Tick-Beschriftung, damit sie sich nicht überlappen
+    svg.appendChild(el("text", { x: m.left - 8, y: 10, class: "axis-label", "text-anchor": "end" }, unit));
+
+    for (const r of refLines) {
+      svg.appendChild(el("line", { x1: m.left, y1: yOf(r.v), x2: m.left + pw, y2: yOf(r.v), stroke: r.color, "stroke-width": 1.5, "stroke-dasharray": "5 4", opacity: 0.75, class: "ref-line" }));
+    }
 
     const endLabels = [];
     series.forEach((s, si) => {
@@ -87,7 +96,7 @@
       flush();
       const lastT = [...tAll].reverse().find((t) => map.has(t));
       if (lastT != null) {
-        svg.appendChild(el("circle", { cx: xOf(lastT), cy: yOf(map.get(lastT)), r: 3, fill: s.color }));
+        svg.appendChild(el("circle", { cx: xOf(lastT), cy: yOf(map.get(lastT)), r: 4, fill: s.color, stroke: isDark() ? "#1e293b" : "#fff", "stroke-width": 2 }));
         endLabels.push({ code: s.code || s.name, color: s.color, y: yOf(map.get(lastT)) });
       }
     });

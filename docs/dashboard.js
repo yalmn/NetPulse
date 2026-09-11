@@ -1,358 +1,477 @@
 // NetPulse Monitoring Dashboard
-// Fuehrt HTTP-, HTTPS- und Ping-Checks direkt im Browser ueber Globalping aus.
-// Wichtig: Das freie Globalping-Limit liegt bei 250 Checks pro Stunde und IP. Deshalb
-// werden die Checks automatisch getaktet (Token-Bucket), damit das Limit nie ueberschritten
-// wird. Bei einem Limit wird kurz gedrosselt und danach automatisch weitergemacht.
+// Reine Oberfläche: Ziele, Messwerte und Länder-Checks kommen von der NetPulse-API auf dem VPS.
+// Login per Basic-Auth-Header, gespeichert in sessionStorage (oder localStorage bei "Angemeldet bleiben").
 
-const GLOBALPING = "https://api.globalping.io/v1/measurements";
-const TYPES = ["http", "https", "ping"];
-const TYPE_LABEL = { http: "HTTP", https: "HTTPS", ping: "Ping" };
-const BUFFER = 60;         // gespeicherte Messpunkte je Ziel und Typ
-const SAFE_RATE = 180;     // Checks pro Stunde, mit Abstand unter dem freien Limit von 250
-const BACKOFF_MS = 45000;  // Drosselzeit nach einem Rate-Limit
+const LS_AUTH = "netpulse-auth";
+const LS_SERVER = "netpulse-server";
+const LS_TAB = "netpulse-tab";
+const LS_RANGE = "netpulse-geo-range";
 
-const LS_TARGETS = "netpulse-dash-targets";
+const TYPE_LABEL = { http: "HTTP", https: "HTTPS", icmp: "Ping", geo: "Länder" };
+const BLACKBOX_TYPES = ["http", "https", "icmp"];
 
-const PALETTE = {
-  light: { http: "#2a78d6", https: "#1baf7a", ping: "#4a3aa7" },
-  dark: { http: "#3987e5", https: "#199e70", ping: "#9085e9" },
+// Kategoriale Slots 1 bis 3 (blau, orange, aqua), feste Reihenfolge je Land
+const COUNTRY_PALETTE = {
+  light: ["#2a78d6", "#eb6834", "#1baf7a"],
+  dark: ["#3987e5", "#d95926", "#199e70"],
 };
 const isDark = () => window.matchMedia("(prefers-color-scheme: dark)").matches;
-const typeColor = (t) => (isDark() ? PALETTE.dark : PALETTE.light)[t];
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const nowT = () => new Date().toLocaleTimeString("de-DE");
-const hostOf = (target) => target.replace(/^https?:\/\//i, "").split("/")[0];
 
-let config = { checkIntervalSec: 60, countryIntervalSec: 600, primaryCountry: "DE", defaultTargets: [], countries: [] };
-let targets = [];
-let paused = false;
-let store = {};        // store[target][type] = [{ t, ms, status, code }]
-let countryStore = {}; // countryStore[target] = { code: { status, ms } }
-let lastCountryAt = 0;
-let backoffUntil = 0;
-let rateState = { remaining: null, resetAt: 0 }; // echtes Globalping-Kontingent aus den Response-Headern
-
-// Token-Bucket: gibt pro Sekunde SAFE_RATE/3600 Tokens frei. Eine Messung an N Standorten
-// kostet N Tokens. So bleibt die Summe aller Checks sicher unter dem freien Limit.
-const bucket = {
-  capacity: 6,
-  tokens: 3,
-  perSec: SAFE_RATE / 3600,
-  last: Date.now(),
-  refill() {
-    const now = Date.now();
-    this.tokens = Math.min(this.capacity, this.tokens + ((now - this.last) / 1000) * this.perSec);
-    this.last = now;
-  },
-  async take(n) {
-    while (true) {
-      this.refill();
-      if (this.tokens >= n) { this.tokens -= n; return; }
-      await sleep(500);
-    }
-  },
+let config = {
+  apiBase: "",
+  grafanaPath: "/grafana/d/blackbox-monitoring-overview/?orgId=1&kiosk&refresh=30s",
+  refreshSec: 15,
+  countries: [
+    { code: "DE", name: "Deutschland" },
+    { code: "FR", name: "Frankreich" },
+    { code: "JP", name: "Japan" },
+  ],
 };
+let auth = null; // { server, user, token }
+let statusData = { blackbox: {}, geo: [] };
+let geoStatus = null;
+let seriesCache = {}; // seriesCache[target] = Antwort von /api/geo/series
+let activeTab = "monitoring";
+let typesTouched = false;
+let statusTimer = null;
+let seriesTimer = null;
 
 // ── DOM ──
-const targetInput = document.getElementById("target-input");
-const addTargetBtn = document.getElementById("add-target");
-const rateInfo = document.getElementById("rate-estimate");
-const summaryEl = document.getElementById("summary");
-const gridEl = document.getElementById("targets-grid");
-const countryWidget = document.getElementById("country-widget");
-const countryUpdated = document.getElementById("country-updated");
-const connStatus = document.getElementById("conn-status");
-const pauseBtn = document.getElementById("pause-btn");
+const $ = (id) => document.getElementById(id);
+const loginView = $("login-view");
+const appView = $("app-view");
+const loginForm = $("login-form");
+const loginError = $("login-error");
+const addForm = $("add-form");
+const targetInput = $("target-input");
+const addMsg = $("add-msg");
+const geoBudget = $("geo-budget");
+const typeBoxes = [...addForm.querySelectorAll('input[name="type"]')];
+const connStatus = $("conn-status");
+const geoRange = $("geo-range");
+const grafanaFrame = $("grafana-frame");
 
 // ── Helfer ──
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const fmtMs = (ms) => (typeof ms === "number" ? Math.round(ms) + " ms" : "–");
+const nowT = () => new Date().toLocaleTimeString("de-DE");
+const hostOf = (t) => t.replace(/^https?:\/\//i, "").split("/")[0];
+const isIp = (v) => /^\d{1,3}(\.\d{1,3}){3}$/.test(v) || (v.includes(":") && /^[0-9a-f:]+$/i.test(v));
+const countryName = (code) => config.countries.find((c) => c.code === code)?.name || code;
+const countryColor = (code) => {
+  const idx = Math.max(0, config.countries.findIndex((c) => c.code === code));
+  return (isDark() ? COUNTRY_PALETTE.dark : COUNTRY_PALETTE.light)[idx % 3];
+};
+const storage = () => (localStorage.getItem(LS_AUTH) ? localStorage : sessionStorage);
+const serverUrl = () => auth.server.replace(/\/+$/, "");
 
-function ensureStore(target) {
-  if (!store[target]) store[target] = { http: [], https: [], ping: [] };
-}
-function pushSample(target, type, sample) {
-  ensureStore(target);
-  const buf = store[target][type];
-  buf.push(sample);
-  if (buf.length > BUFFER) buf.shift();
-}
-function latest(target, type) {
-  const buf = store[target]?.[type];
-  return buf && buf.length ? buf[buf.length - 1] : null;
-}
-function uptimePct(target, type) {
-  const buf = (store[target]?.[type] || []).filter((s) => s.status !== "unknown");
-  if (buf.length === 0) return null;
-  const up = buf.filter((s) => s.status === "up").length;
-  return Math.round((up / buf.length) * 100);
-}
-function overallStatus(target) {
-  const st = TYPES.map((t) => latest(target, t)?.status).filter((s) => s && s !== "unknown");
-  if (st.length === 0) return "unknown";
-  if (st.every((s) => s === "up")) return "up";
-  if (st.every((s) => s === "down")) return "down";
-  return "degraded";
+function encodeBasic(user, password) {
+  const bytes = new TextEncoder().encode(`${user}:${password}`);
+  return btoa(String.fromCharCode(...bytes));
 }
 
-// ── Info zur automatischen Taktung ──
-function updateRateInfo() {
-  const n = targets.length;
-  if (n === 0) { rateInfo.textContent = "Noch keine Ziele. Oben eine IP oder URL hinzufügen."; return; }
-  const countryPerHour = n * (config.countries.length || 0) * (3600 / config.countryIntervalSec);
-  const mainPerHour = Math.max(20, SAFE_RATE - countryPerHour);
-  const mainJobs = n * TYPES.length;
-  const refreshSec = Math.round((mainJobs * 3600) / mainPerHour);
-  rateInfo.innerHTML =
-    `Automatische Taktung, bleibt sicher unter dem freien Limit von 250 Checks/Stunde. ` +
-    `Jedes Ziel wird etwa alle <strong>${refreshSec} Sekunden</strong> geprüft. ` +
-    `Mehr Ziele bedeuten pro Ziel größere Abstände.`;
+function detailText(detail, status) {
+  if (Array.isArray(detail)) return detail.map((d) => d.msg).join(", ");
+  return detail || `Fehler ${status}`;
 }
 
-// Liest das echte Kontingent aus den Globalping-Headern (auch bei 429).
-function syncRate(headers) {
-  const rem = headers.get("x-ratelimit-remaining");
-  const reset = headers.get("x-ratelimit-reset");
-  if (rem != null) rateState.remaining = parseInt(rem, 10);
-  if (reset != null) rateState.resetAt = Date.now() + parseInt(reset, 10) * 1000;
-  if (rateState.remaining != null && rateState.remaining <= 0) triggerBackoff();
+class AuthError extends Error {}
+
+async function api(path, opts = {}, credentials = auth) {
+  const headers = { Authorization: "Basic " + credentials.token };
+  if (opts.body) headers["Content-Type"] = "application/json";
+  let res;
+  try {
+    res = await fetch(credentials.server.replace(/\/+$/, "") + path, { ...opts, headers });
+  } catch (_) {
+    throw new Error("Server nicht erreichbar");
+  }
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401) throw new AuthError(detailText(data.detail, 401));
+  if (!res.ok) throw new Error(detailText(data.detail, res.status));
+  return data;
 }
 
-function resetMinutes() {
-  return Math.max(1, Math.ceil((rateState.resetAt - Date.now()) / 60000));
+function setConn(ok, text) {
+  connStatus.textContent = text;
+  connStatus.className = "meta " + (ok ? "ok" : "err");
 }
 
-function setConn(kind) {
-  if (kind === "limit") {
-    connStatus.textContent = `Globalping-Kontingent aufgebraucht (0 von 250). Neues Kontingent in etwa ${resetMinutes()} Minuten, danach geht es automatisch weiter.`;
-    connStatus.className = "meta err";
-  } else {
-    const budget = rateState.remaining != null ? `, Kontingent ${rateState.remaining} von 250` : "";
-    connStatus.textContent = "zuletzt geprüft " + nowT() + budget;
-    connStatus.className = "meta ok";
+// ── Login ──
+function showLogin(message) {
+  stopPolling();
+  appView.hidden = true;
+  loginView.hidden = false;
+  $("logout-btn").hidden = true;
+  $("user-info").textContent = "";
+  connStatus.textContent = "";
+  $("login-server").value = localStorage.getItem(LS_SERVER) || config.apiBase || "";
+  loginError.hidden = !message;
+  loginError.textContent = message || "";
+}
+
+function showApp() {
+  loginView.hidden = true;
+  appView.hidden = false;
+  $("logout-btn").hidden = false;
+  $("user-info").textContent = auth.user;
+  $("grafana-open").href = serverUrl() + config.grafanaPath.replace("&kiosk", "");
+  selectTab(localStorage.getItem(LS_TAB) || "monitoring");
+  startPolling();
+}
+
+function logout(message) {
+  auth = null;
+  localStorage.removeItem(LS_AUTH);
+  sessionStorage.removeItem(LS_AUTH);
+  grafanaFrame.removeAttribute("src");
+  statusData = { blackbox: {}, geo: [] };
+  seriesCache = {};
+  showLogin(message);
+}
+
+loginForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const server = $("login-server").value.trim();
+  const user = $("login-user").value.trim();
+  const credentials = { server, user, token: encodeBasic(user, $("login-password").value) };
+  $("login-submit").disabled = true;
+  loginError.hidden = true;
+  try {
+    await api("/api/me", {}, credentials);
+    auth = credentials;
+    localStorage.setItem(LS_SERVER, server);
+    ($("login-remember").checked ? localStorage : sessionStorage).setItem(LS_AUTH, JSON.stringify(auth));
+    $("login-password").value = "";
+    showApp();
+  } catch (err) {
+    loginError.textContent = err instanceof AuthError ? "Benutzername oder Passwort falsch." : `${err.message}. Server-Adresse prüfen.`;
+    loginError.hidden = false;
+  } finally {
+    $("login-submit").disabled = false;
+  }
+});
+
+$("logout-btn").addEventListener("click", () => logout());
+
+// ── Tabs ──
+function selectTab(tab) {
+  activeTab = tab === "geo" ? "geo" : "monitoring";
+  localStorage.setItem(LS_TAB, activeTab);
+  document.querySelectorAll(".tab").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === activeTab)));
+  document.querySelectorAll(".tab-panel").forEach((p) => (p.hidden = p.dataset.panel !== activeTab));
+  // Grafana erst laden, wenn der Bereich sichtbar ist (sonst Login-Dialog ohne Kontext)
+  if (activeTab === "monitoring" && !grafanaFrame.getAttribute("src")) grafanaFrame.src = serverUrl() + config.grafanaPath;
+  if (activeTab === "geo") refreshSeries();
+}
+document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => selectTab(b.dataset.tab)));
+
+// ── Ziel hinzufügen ──
+function suggestTypes(value) {
+  const v = value.trim();
+  if (/^https:\/\//i.test(v)) return ["https"];
+  if (/^http:\/\//i.test(v)) return ["http"];
+  if (isIp(v)) return ["icmp"];
+  return v ? ["https", "icmp"] : [];
+}
+
+function selectedTypes() {
+  return typeBoxes.filter((b) => b.checked).map((b) => b.value);
+}
+
+targetInput.addEventListener("input", () => {
+  if (typesTouched) return;
+  const suggested = suggestTypes(targetInput.value);
+  typeBoxes.forEach((b) => { if (b.value !== "geo") b.checked = suggested.includes(b.value); });
+});
+typeBoxes.forEach((b) => b.addEventListener("change", () => { typesTouched = true; renderBudget(); }));
+
+function showAddMsg(text, ok) {
+  addMsg.textContent = text;
+  addMsg.className = "form-msg " + (ok ? "ok" : "err");
+  addMsg.hidden = false;
+}
+
+addForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const types = selectedTypes();
+  if (types.length === 0) { showAddMsg("Mindestens einen Check auswählen.", false); return; }
+  $("add-target").disabled = true;
+  try {
+    const { results } = await api("/api/targets", { method: "POST", body: JSON.stringify({ target: targetInput.value, types }) });
+    const added = results.filter((r) => r.added).map((r) => `${TYPE_LABEL[r.type]} ${r.target}`);
+    const existing = results.filter((r) => !r.added).map((r) => TYPE_LABEL[r.type]);
+    showAddMsg(
+      (added.length ? `Hinzugefügt: ${added.join(", ")}.` : "") + (existing.length ? ` Bereits vorhanden: ${existing.join(", ")}.` : ""),
+      added.length > 0
+    );
+    targetInput.value = "";
+    typesTouched = false;
+    typeBoxes.forEach((b) => (b.checked = false));
+    await refreshStatus();
+    if (activeTab === "geo") refreshSeries();
+  } catch (err) {
+    if (err instanceof AuthError) return logout("Sitzung abgelaufen, bitte neu anmelden.");
+    showAddMsg(err.message, false);
+  } finally {
+    $("add-target").disabled = false;
+  }
+});
+
+async function removeTarget(type, target, btn) {
+  // Zweistufig statt Browser-Dialog: erster Klick fragt nach, zweiter entfernt
+  if (btn.dataset.armed !== "1") {
+    btn.dataset.armed = "1";
+    btn.textContent = "Wirklich?";
+    setTimeout(() => { btn.dataset.armed = ""; btn.textContent = "Entfernen"; }, 3000);
+    return;
+  }
+  btn.disabled = true;
+  try {
+    await api(`/api/targets?type=${encodeURIComponent(type)}&target=${encodeURIComponent(target)}`, { method: "DELETE" });
+    if (type === "geo") delete seriesCache[target];
+    await refreshStatus();
+    if (activeTab === "geo") renderGeo();
+  } catch (err) {
+    if (err instanceof AuthError) return logout("Sitzung abgelaufen, bitte neu anmelden.");
+    showAddMsg(err.message, false);
+    btn.disabled = false;
   }
 }
 
-function triggerBackoff() {
-  const waitMs = rateState.resetAt > Date.now() ? rateState.resetAt - Date.now() : BACKOFF_MS;
-  backoffUntil = Date.now() + Math.min(waitMs + 1000, 66 * 60 * 1000);
-  bucket.tokens = 0;
-  setConn("limit");
-}
-
-// ── Persistenz ──
-function saveTargets() { localStorage.setItem(LS_TARGETS, JSON.stringify(targets)); }
-
-// ── Zieleingabe ──
-function addTarget(raw) {
-  const t = String(raw || "").trim();
-  if (!t) return;
-  if (targets.includes(t)) { targetInput.value = ""; return; }
-  targets.push(t);
-  saveTargets();
-  targetInput.value = "";
-  updateRateInfo();
-  render();
-}
-function removeTarget(t) {
-  targets = targets.filter((x) => x !== t);
-  delete store[t];
-  delete countryStore[t];
-  saveTargets();
-  updateRateInfo();
-  render();
-}
-
-// ── Globalping-Messung ──
-async function gpMeasure(target, type, locations) {
-  const isHttp = type === "http" || type === "https";
-  const body = {
-    target: hostOf(target),
-    type: isHttp ? "http" : "ping",
-    locations,
-    measurementOptions: isHttp
-      ? { protocol: type === "https" ? "HTTPS" : "HTTP", request: { method: "HEAD" } }
-      : { packets: 2 },
-  };
-  const res = await fetch(GLOBALPING, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  syncRate(res.headers);
-  if (res.status === 429) throw new Error("429");
-  if (!res.ok) throw new Error(String(res.status));
-  const { id } = await res.json();
-  const deadline = Date.now() + 30000;
-  let data = null;
-  while (Date.now() < deadline) {
-    data = await (await fetch(`${GLOBALPING}/${id}`)).json();
-    if (data.status !== "in-progress") break;
-    await sleep(1000);
-  }
-  return locations.map((_, i) => {
-    const r = (data?.results || [])[i]?.result || {};
-    if (isHttp) {
-      const code = r.statusCode;
-      const ok = typeof code === "number" && code < 400;
-      return { status: r.status === "failed" ? "down" : ok ? "up" : "down", ms: typeof r.timings?.total === "number" ? r.timings.total : null, code };
-    }
-    const s = r.stats || {};
-    return { status: r.status === "failed" ? "down" : typeof s.loss === "number" ? (s.loss >= 100 ? "down" : "up") : "unknown", ms: typeof s.avg === "number" ? s.avg : null };
-  });
-}
-
-// ── Schleife: Haupt-Checks (rundum, ein Job nach dem anderen, getaktet) ──
-async function mainLoop() {
-  let i = 0;
-  while (true) {
-    if (paused || targets.length === 0 || Date.now() < backoffUntil) { await sleep(1000); continue; }
-    const jobs = targets.flatMap((t) => TYPES.map((ty) => ({ target: t, type: ty })));
-    if (jobs.length === 0) { await sleep(1000); continue; }
-    const job = jobs[i % jobs.length];
-    i++;
-    await bucket.take(1);
-    if (Date.now() < backoffUntil) continue;
-    try {
-      const [r] = await gpMeasure(job.target, job.type, [{ country: config.primaryCountry }]);
-      pushSample(job.target, job.type, { t: Date.now(), ms: r.ms, status: r.status, code: r.code });
-      setConn("ok");
-    } catch (e) {
-      if (e.message === "429") triggerBackoff();
-      else pushSample(job.target, job.type, { t: Date.now(), ms: null, status: "unknown" });
-    }
+// ── Daten laden ──
+async function refreshStatus() {
+  try {
+    const [status, geo] = await Promise.all([api("/api/targets/status"), api("/api/geo/status")]);
+    statusData = status;
+    geoStatus = geo;
+    setConn(true, "aktualisiert " + nowT());
     render();
+  } catch (err) {
+    if (err instanceof AuthError) return logout("Sitzung abgelaufen, bitte neu anmelden.");
+    setConn(false, err.message);
   }
 }
 
-// ── Schleife: Laender-Erreichbarkeit ──
-async function countryLoop() {
-  while (true) {
-    await sleep(2000);
-    if (paused || targets.length === 0 || config.countries.length === 0) continue;
-    if (Date.now() - lastCountryAt < config.countryIntervalSec * 1000) continue;
-    if (Date.now() < backoffUntil) continue;
-    const locs = config.countries.map((c) => ({ country: c.code }));
-    for (const target of targets) {
-      if (Date.now() < backoffUntil) break;
-      await bucket.take(locs.length);
+async function refreshSeries() {
+  const range = geoRange.value;
+  const targets = statusData.geo.map((g) => g.target);
+  await Promise.all(
+    targets.map(async (t) => {
       try {
-        const arr = await gpMeasure(target, "ping", locs);
-        const out = {};
-        config.countries.forEach((c, idx) => { out[c.code] = arr[idx]; });
-        countryStore[target] = out;
-      } catch (e) {
-        if (e.message === "429") { triggerBackoff(); break; }
+        seriesCache[t] = await api(`/api/geo/series?target=${encodeURIComponent(t)}&range=${range}`);
+      } catch (err) {
+        if (err instanceof AuthError) throw err;
       }
-    }
-    lastCountryAt = Date.now();
-    countryUpdated.textContent = "aktualisiert " + nowT();
-    renderCountryWidget();
-  }
+    })
+  ).catch((err) => { if (err instanceof AuthError) logout("Sitzung abgelaufen, bitte neu anmelden."); });
+  if (auth) renderGeo();
 }
+
+function startPolling() {
+  stopPolling();
+  refreshStatus().then(() => { if (activeTab === "geo") refreshSeries(); });
+  statusTimer = setInterval(refreshStatus, Math.max(5, config.refreshSec) * 1000);
+  seriesTimer = setInterval(() => { if (activeTab === "geo") refreshSeries(); }, 60000);
+}
+function stopPolling() {
+  clearInterval(statusTimer);
+  clearInterval(seriesTimer);
+}
+
+geoRange.addEventListener("change", () => {
+  localStorage.setItem(LS_RANGE, geoRange.value);
+  seriesCache = {};
+  refreshSeries();
+});
 
 // ── Rendering ──
 function statusBadge(status, label) {
-  const map = { up: "Online", down: "Offline", degraded: "Teilweise", unknown: "–" };
-  return `<span class="status-badge status-${status === "degraded" ? "warn" : status}"><span class="status-dot"></span>${label || map[status] || status}</span>`;
+  const map = { up: "Online", down: "Offline", degraded: "Teilweise", unknown: "Ausstehend" };
+  return `<span class="status-badge status-${status === "degraded" ? "warn" : status}"><span class="status-dot"></span>${esc(label || map[status] || status)}</span>`;
+}
+
+function geoState(entry) {
+  const results = Object.values(entry.countries || {}).filter(Boolean);
+  if (!entry.t || results.length === 0) return { status: "unknown", up: 0, total: config.countries.length, ms: null };
+  const up = results.filter((r) => r.up).length;
+  const ms = results.filter((r) => r.up && typeof r.ms === "number").map((r) => r.ms);
+  return {
+    status: up === results.length ? "up" : up === 0 ? "down" : "degraded",
+    up,
+    total: results.length,
+    ms: ms.length ? ms.reduce((a, b) => a + b, 0) / ms.length : null,
+  };
+}
+
+function allRows() {
+  const rows = [];
+  for (const type of BLACKBOX_TYPES) {
+    for (const t of statusData.blackbox?.[type]?.targets || []) {
+      rows.push({
+        type,
+        target: t.value,
+        host: hostOf(t.value),
+        status: t.status,
+        ms: typeof t.probe_duration_seconds === "number" ? t.probe_duration_seconds * 1000 : null,
+        availability: t.availability_5m,
+      });
+    }
+  }
+  for (const g of statusData.geo || []) {
+    const s = geoState(g);
+    rows.push({ type: "geo", target: g.target, host: hostOf(g.target), status: s.status, ms: s.ms, availability: null, geo: s });
+  }
+  const order = { http: 0, https: 1, icmp: 2, geo: 3 };
+  return rows.sort((a, b) => a.host.localeCompare(b.host) || order[a.type] - order[b.type]);
 }
 
 function renderSummary() {
-  const online = targets.filter((t) => overallStatus(t) === "up").length;
-  const offline = targets.filter((t) => overallStatus(t) === "down").length;
-  const degraded = targets.filter((t) => overallStatus(t) === "degraded").length;
-  const allMs = [];
-  for (const t of targets) for (const ty of TYPES) { const l = latest(t, ty); if (l && l.status === "up" && typeof l.ms === "number") allMs.push(l.ms); }
-  const avg = allMs.length ? Math.round(allMs.reduce((a, b) => a + b, 0) / allMs.length) : null;
+  const rows = allRows();
+  const hosts = new Set(rows.map((r) => r.host)).size;
+  const count = (s) => rows.filter((r) => r.status === s).length;
   const stat = (label, value, cls) => `<div class="stat"><span class="stat-label">${label}</span><span class="stat-value ${cls || ""}">${value}</span></div>`;
-  summaryEl.innerHTML =
-    stat("Ziele", targets.length) +
-    stat("Online", online, "ok") +
-    stat("Teilweise", degraded, degraded ? "warn" : "") +
-    stat("Offline", offline, offline ? "err" : "") +
-    stat("Ø Antwortzeit", avg != null ? avg + " ms" : "–");
+  const takt = geoStatus && geoStatus.targets > 0 ? `${geoStatus.interval_s} s` : "–";
+  $("summary").innerHTML =
+    stat("Ziele", hosts) +
+    stat("Checks online", count("up"), "ok") +
+    stat("Teilweise", count("degraded"), count("degraded") ? "warn" : "") +
+    stat("Offline", count("down"), count("down") ? "err" : "") +
+    stat("Ausstehend", count("unknown")) +
+    stat("Takt Länder-Check", takt);
 }
 
-function renderTargets() {
-  if (targets.length === 0) {
-    gridEl.innerHTML = '<div class="card"><div class="empty-state">Noch keine Ziele. Oben eine IP oder URL hinzufügen.</div></div>';
+function renderTargetTable() {
+  const rows = allRows();
+  const host = $("target-table");
+  if (rows.length === 0) {
+    host.innerHTML = '<div class="empty-state">Noch keine Ziele. Oben eine IP oder URL hinzufügen.</div>';
     return;
   }
-  gridEl.innerHTML = "";
-  for (const target of targets) {
-    const card = document.createElement("div");
-    card.className = "card target-card";
-    const head = document.createElement("div");
-    head.className = "card-header-bar";
-    head.innerHTML = `<h3>${target}</h3><div class="target-head-right">${statusBadge(overallStatus(target))}<button class="btn btn-danger" data-remove="${encodeURIComponent(target)}">Entfernen</button></div>`;
-    card.appendChild(head);
-
-    const body = document.createElement("div");
-    body.className = "card-body checks";
-    for (const type of TYPES) {
-      const l = latest(target, type);
-      const row = document.createElement("div");
-      row.className = "check-row";
-      const up = uptimePct(target, type);
-      row.innerHTML =
-        `<span class="check-name">${TYPE_LABEL[type]}</span>` +
-        statusBadge(l?.status || "unknown") +
-        `<span class="mono check-code">${l?.code != null ? l.code : ""}</span>` +
-        `<span class="mono check-ms">${fmtMs(l?.ms)}</span>` +
-        `<span class="check-uptime">${up != null ? up + "%" : "–"}</span>` +
-        `<div class="spark-host"></div>`;
-      body.appendChild(row);
-      const points = (store[target]?.[type] || []).map((s) => ({ v: s.ms, status: s.status }));
-      NetPulseChart.spark(row.querySelector(".spark-host"), points, { color: typeColor(type) });
-    }
-    card.appendChild(body);
-    gridEl.appendChild(card);
-  }
-  gridEl.querySelectorAll("[data-remove]").forEach((b) =>
-    b.addEventListener("click", () => removeTarget(decodeURIComponent(b.dataset.remove)))
-  );
-}
-
-function renderCountryWidget() {
-  if (targets.length === 0) { countryWidget.innerHTML = '<div class="empty-state">Wird geladen, sobald Ziele vorhanden sind.</div>'; return; }
-  const cols = config.countries;
-  const head = `<tr><th>Ziel</th>${cols.map((c) => `<th>${c.name}</th>`).join("")}</tr>`;
-  const rows = targets
-    .map((t) => {
-      const cells = cols
-        .map((c) => {
-          const cell = countryStore[t]?.[c.code];
-          if (!cell) return `<td><span class="mono">…</span></td>`;
-          return `<td>${statusBadge(cell.status)}<span class="mono country-ms">${cell.ms != null ? Math.round(cell.ms) + " ms" : ""}</span></td>`;
-        })
-        .join("");
-      return `<tr><td class="country-target">${t}</td>${cells}</tr>`;
+  const body = rows
+    .map((r) => {
+      const detail = r.type === "geo" ? `${r.geo.up}/${r.geo.total} Länder` : r.availability != null ? r.availability + " %" : "–";
+      return `<tr>
+        <td class="country-target">${esc(r.target)}</td>
+        <td>${TYPE_LABEL[r.type]}</td>
+        <td>${statusBadge(r.status)}</td>
+        <td class="num mono">${fmtMs(r.ms)}</td>
+        <td class="num">${esc(detail)}</td>
+        <td class="actions"><button class="btn btn-danger btn-sm" data-type="${r.type}" data-target="${esc(r.target)}">Entfernen</button></td>
+      </tr>`;
     })
     .join("");
-  countryWidget.innerHTML = `<div class="table-wrap"><table class="status-table country-table"><thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
+  host.innerHTML = `<div class="table-wrap"><table class="status-table">
+    <thead><tr><th>Ziel</th><th>Check</th><th>Status</th><th class="num">Antwortzeit</th><th class="num">Verfügbarkeit</th><th></th></tr></thead>
+    <tbody>${body}</tbody></table></div>`;
+  host.querySelectorAll("button[data-type]").forEach((b) =>
+    b.addEventListener("click", () => removeTarget(b.dataset.type, b.dataset.target, b))
+  );
+  $("targets-updated").textContent = "Verfügbarkeit: letzte 5 Minuten";
+}
+
+function renderBudget() {
+  if (!geoStatus) { geoBudget.textContent = ""; return; }
+  const n = geoStatus.targets;
+  const wantsGeo = typeBoxes.find((b) => b.value === "geo").checked;
+  const next = n + (wantsGeo ? 1 : 0);
+  const perRound = geoStatus.countries.length || 3;
+  const interval = next === 0 ? 60 : Math.max(60, Math.ceil((next * perRound * 3600) / (geoStatus.limit_per_hour * 0.9)));
+  let text = `Länder-Check: ${n} ${n === 1 ? "Ziel" : "Ziele"} aktiv, bis zu ${geoStatus.max_minutely_targets} Ziele werden minütlich gemessen.`;
+  if (wantsGeo) text += ` Mit diesem Ziel: alle ${interval} Sekunden.`;
+  if (!geoStatus.token) text += " Ohne Globalping-Token gilt das kleinere anonyme Limit.";
+  geoBudget.textContent = text;
+  geoBudget.className = "hint" + (wantsGeo && interval > 60 ? " rate-over" : "");
+}
+
+function renderGeoStatus() {
+  const el = $("geo-status");
+  if (!geoStatus) { el.textContent = ""; return; }
+  if (geoStatus.paused_for_s > 0) {
+    el.textContent = `Globalping-Limit erreicht, weiter in ${Math.ceil(geoStatus.paused_for_s / 60)} min`;
+    el.className = "meta err";
+    return;
+  }
+  const quota = geoStatus.remaining != null ? `, Kontingent ${geoStatus.remaining}/${geoStatus.limit_per_hour}` : "";
+  el.textContent = `alle ${geoStatus.interval_s} s${quota}`;
+  el.className = "meta";
+}
+
+function renderGeo() {
+  renderGeoStatus();
+  const grid = $("geo-grid");
+  const entries = statusData.geo || [];
+  if (entries.length === 0) {
+    grid.innerHTML = '<div class="card"><div class="empty-state">Noch keine Länder-Checks. Beim Hinzufügen eines Ziels „Länder-Check“ anhaken.</div></div>';
+    return;
+  }
+  grid.innerHTML = "";
+  for (const entry of entries) {
+    const data = seriesCache[entry.target];
+    const card = document.createElement("div");
+    card.className = "card";
+    const latest = config.countries
+      .map((c) => {
+        const r = entry.countries?.[c.code];
+        const status = !r ? "unknown" : r.up ? "up" : "down";
+        return `<span class="geo-now"><span class="legend-swatch" style="background:${countryColor(c.code)}"></span>${c.code} ${statusBadge(status, !r ? "–" : r.up ? fmtMs(r.ms) : r.code ? "HTTP " + r.code : "Offline")}</span>`;
+      })
+      .join("");
+    card.innerHTML = `<div class="card-header-bar"><h3>${esc(entry.target)}</h3><div class="geo-latest">${latest}</div></div>
+      <div class="card-body"><div class="chart-host"></div><div class="geo-stats"></div></div>`;
+    grid.appendChild(card);
+
+    const chartHost = card.querySelector(".chart-host");
+    const statsHost = card.querySelector(".geo-stats");
+    if (!data) { chartHost.innerHTML = '<div class="empty-state">Wird geladen …</div>'; continue; }
+
+    const byCode = Object.fromEntries(data.countries.map((c) => [c.code, c]));
+    const series = config.countries.map((c) => ({
+      name: c.name,
+      code: c.code,
+      color: countryColor(c.code),
+      values: byCode[c.code]?.values || [],
+    }));
+    const refLines = config.countries
+      .filter((c) => typeof byCode[c.code]?.avg === "number")
+      .map((c) => ({ v: byCode[c.code].avg, color: countryColor(c.code) }));
+    NetPulseChart.line(chartHost, series, { unit: "ms", refLines });
+
+    statsHost.innerHTML = config.countries
+      .map((c) => {
+        const d = byCode[c.code] || {};
+        return `<div class="stat"><span class="stat-label"><span class="legend-swatch" style="background:${countryColor(c.code)}"></span>${esc(countryName(c.code))}</span>
+          <span class="stat-value">Ø ${fmtMs(d.avg)}</span>
+          <span class="meta">Verfügbarkeit ${typeof d.availability === "number" ? d.availability + " %" : "–"}</span></div>`;
+      })
+      .join("");
+  }
 }
 
 function render() {
   renderSummary();
-  renderTargets();
-  renderCountryWidget();
+  renderTargetTable();
+  renderBudget();
+  if (activeTab === "geo") renderGeo();
+  else renderGeoStatus();
 }
 
-// ── Steuerung ──
-addTargetBtn.addEventListener("click", () => addTarget(targetInput.value));
-targetInput.addEventListener("keydown", (e) => { if (e.key === "Enter") addTarget(targetInput.value); });
-pauseBtn.addEventListener("click", () => {
-  paused = !paused;
-  pauseBtn.textContent = paused ? "Fortsetzen" : "Pause";
-});
-window.matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", render);
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => { if (auth) renderGeo(); });
 
 // ── Init ──
 async function init() {
   try { config = { ...config, ...(await (await fetch("config.json", { cache: "no-store" })).json()) }; } catch (_) {}
-  try { const t = JSON.parse(localStorage.getItem(LS_TARGETS)); if (Array.isArray(t)) targets = t; } catch (_) {}
-  if (targets.length === 0 && Array.isArray(config.defaultTargets)) targets = [...config.defaultTargets];
-
-  updateRateInfo();
-  render();
-  mainLoop();
-  countryLoop();
-  setInterval(() => { if (Date.now() < backoffUntil) setConn("limit"); }, 5000);
+  const savedRange = localStorage.getItem(LS_RANGE);
+  if (savedRange) geoRange.value = savedRange;
+  try { auth = JSON.parse(localStorage.getItem(LS_AUTH) || sessionStorage.getItem(LS_AUTH)); } catch (_) { auth = null; }
+  if (!auth?.token) return showLogin();
+  try {
+    await api("/api/me");
+    showApp();
+  } catch (err) {
+    if (err instanceof AuthError) logout("Bitte neu anmelden.");
+    else showLogin(`${err.message}. Server-Adresse prüfen.`);
+  }
 }
 
 init();

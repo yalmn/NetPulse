@@ -1,5 +1,6 @@
 /* NetPulse – oeffentliche Status-Seite (GitHub Pages) */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; }
 
 :root {
   --bg: #f8fafc;
@@ -269,6 +270,49 @@ body {
 @media (max-width: 720px) {
   .check-row { grid-template-columns: 52px 90px 1fr; }
   .check-uptime, .spark-host { display: none; }
+}
+
+/* ── v4: Kopfzeile, Login, Tabs, Grafana, Länder ── */
+.topbar-right { display: flex; align-items: center; gap: 14px; }
+.btn-sm { height: 28px; padding: 0 10px; font-size: 12px; text-decoration: none; }
+.btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--border); }
+.btn-danger:hover { background: var(--danger-light); }
+
+.login-card { max-width: 420px; margin: 48px auto; }
+.login-form { display: flex; flex-direction: column; gap: 14px; }
+.chip-plain { border: none; padding: 0; font-size: 13px; }
+.form-msg { font-size: 13px; margin-top: 8px; }
+.form-msg.ok { color: var(--success); }
+.form-msg.err { color: var(--danger); }
+
+.add-types { margin-top: 12px; }
+
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+.tab {
+  background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  padding: 10px 14px; font: 500 13px var(--font); color: var(--text-secondary); cursor: pointer;
+}
+.tab:hover { color: var(--text); }
+.tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+
+.status-table th.num, .status-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.status-table td.actions { text-align: right; width: 1%; white-space: nowrap; }
+
+.grafana-hint { padding: 0 20px; margin: 10px 0; }
+.grafana-frame { display: block; width: 100%; height: max(640px, 80vh); border: none; border-top: 1px solid var(--border); border-radius: 0 0 var(--radius) var(--radius); }
+
+#geo-range {
+  height: 30px; padding: 0 8px; background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius); font: 13px var(--font);
+}
+.geo-latest { display: flex; flex-wrap: wrap; gap: 12px; }
+.geo-now { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.geo-stats { display: flex; flex-wrap: wrap; gap: 12px 40px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.geo-stats .stat-label { display: inline-flex; align-items: center; gap: 6px; }
+
+@media (max-width: 720px) {
+  .card-header-bar { flex-wrap: wrap; gap: 8px; }
+  .topbar-right #user-info { display: none; }
 }
 
 footer { text-align: center; color: var(--text-secondary); font-size: 12px; padding: 24px 0 8px; }

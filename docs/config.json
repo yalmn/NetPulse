@@ -1,15 +1,11 @@
 {
   "title": "NetPulse",
-  "checkIntervalSec": 60,
-  "countryIntervalSec": 600,
-  "primaryCountry": "DE",
-  "defaultTargets": [
-    "example.com"
-  ],
+  "apiBase": "",
+  "grafanaPath": "/grafana/d/blackbox-monitoring-overview/?orgId=1&kiosk&refresh=30s",
+  "refreshSec": 15,
   "countries": [
-    { "code": "CA", "name": "Kanada" },
-    { "code": "JP", "name": "Japan" },
-    { "code": "AU", "name": "Australien" },
-    { "code": "US", "name": "USA" }
+    { "code": "DE", "name": "Deutschland" },
+    { "code": "FR", "name": "Frankreich" },
+    { "code": "JP", "name": "Japan" }
   ]
 }
