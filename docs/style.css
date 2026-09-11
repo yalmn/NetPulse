@@ -286,6 +286,7 @@ body {
 .form-msg.err { color: var(--danger); }
 
 .add-types { margin-top: 12px; }
+.chip:has(input:disabled) { opacity: 0.45; cursor: not-allowed; }
 
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
 .tab {
