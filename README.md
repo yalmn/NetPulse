@@ -1,129 +1,109 @@
 # NetPulse
 
-Monitoring für URLs und IP-Adressen: Analysten tragen Ziele über ein Dashboard auf GitHub Pages ein, ein Server (VPS) misst HTTP, HTTPS und Ping und zeigt die Verläufe in Grafana. URLs werden ausschließlich per HTTP/HTTPS geprüft, Ping (ICMP) gibt es nur für IP-Adressen. Zusätzlich wird die Ladezeit aus Deutschland, Frankreich und Japan minütlich gemessen und als Liniendiagramm dargestellt.
-
-## Architektur
-
-```
-Analyst ─► GitHub Pages (docs/, statisch)
-              │ fetch mit Login                 iframe
-              ▼                                  ▼
-        https://<PUBLIC_HOST>  ── Caddy (TLS, Basic Auth) ──
-              │ /api/*                          │ /grafana/*
-              ▼                                  ▼
-        FastAPI ──reload──► Prometheus ◄──── Grafana
-          │ /metrics ◄─scrape─┘    └─scrape─► Blackbox Exporter (HTTP/HTTPS/ICMP)
-          └─ Geo-Collector ──► Globalping (FR, JP), DE misst der VPS selbst
-```
-
-| Service           | Aufgabe                                                        |
-|-------------------|----------------------------------------------------------------|
-| Caddy             | HTTPS mit Let's-Encrypt-Zertifikat, Basic Auth, einziger offener Dienst (Ports 80/443) |
-| FastAPI App       | JSON-API für das Dashboard, alte Web-UI, Geo-Collector         |
-| Prometheus        | Speichert alle Messwerte (Standard 30 Tage)                    |
-| Blackbox Exporter | HTTP-, HTTPS- und ICMP-Checks vom Server aus                   |
-| Grafana           | Diagramme, eingebettet ins Dashboard unter `/grafana`          |
+Monitoring-Tool für URLs und IPs. Die Oberfläche läuft über GitHub Pages, gemessen wird auf einem eigenen VPS mit Prometheus, Blackbox Exporter und Grafana.
 
 Das Dashboard hat zwei Bereiche:
 
-1. **Monitoring (Grafana):** Zielliste mit Status sowie das Grafana-Dashboard mit Phasenverlauf (DNS, Connect, TLS, Processing, Transfer), Probe-Dauer, WHOIS und DNS.
-2. **Länder-Erreichbarkeit:** pro Ziel ein Liniendiagramm (x = Zeit, y = Ladezeit in ms) mit einer Linie je Land, der Durchschnitt ist gestrichelt eingezeichnet. Webseiten werden per HTTP(S) geladen, reine IP-Adressen gepingt.
+- Monitoring: HTTP, HTTPS und Ping vom VPS aus, Diagramme über Grafana
+- Länder-Erreichbarkeit: Ladezeit aus Deutschland, Frankreich und Japan, minütlich als Liniendiagramm
 
-Deutschland misst der VPS selbst über den Blackbox Exporter (alle 15 Sekunden, ohne Kontingent). Frankreich und Japan laufen über [Globalping](https://globalping.io) vom Server aus, also auch dann, wenn kein Browser offen ist. Beim Anlegen eines Länder-Checks wird der passende HTTP/HTTPS- bzw. Ping-Check für die DE-Linie automatisch mit angelegt.
+URLs werden nur per HTTP/HTTPS geprüft, Ping gibt es nur für IPs.
 
-Pro Ziel und Runde kostet das zwei Globalping-Tests (FR und JP). Mit kostenlosem Globalping-Token stehen 500 Tests pro Stunde zur Verfügung: bis zu drei Ziele werden minütlich gemessen, bei mehr Zielen verlängert sich der Takt automatisch. Das Dashboard zeigt den aktuellen Takt an.
+## Stack
 
-Für konsistente Daten wird jede gescheiterte Messung als Lücke gespeichert, nie als alter Wert. Jedes Land wird einzeln gemessen, Netzwerkfehler werden einmal wiederholt, und ein Wächter startet die Messschleife neu, falls sie abbricht oder hängt. Liegt die letzte Messung zu lange zurück, zeigt das Dashboard eine Warnung.
+| Service           | Aufgabe                                          |
+|-------------------|--------------------------------------------------|
+| Caddy             | Reverse Proxy, HTTPS über Let's Encrypt, Login   |
+| FastAPI           | API fürs Dashboard, Länder-Checks                |
+| Prometheus        | Speichert die Messwerte (30 Tage)                |
+| Blackbox Exporter | HTTP/HTTPS/ICMP-Checks vom VPS                   |
+| Grafana           | Diagramme, erreichbar unter `/grafana`           |
 
-## Setup auf dem VPS
+Nach außen sind nur Port 80 und 443 offen.
 
-Voraussetzung: Linux-VPS (z. B. Ionos) mit öffentlicher IP, Ports 80 und 443 erreichbar.
+Deutschland misst der VPS selbst, Frankreich und Japan laufen über [Globalping](https://globalping.io). Mit einem kostenlosen Token (500 Tests pro Stunde) gehen 3 Targets im Minutentakt, bei mehr Targets wird automatisch langsamer gemessen. Fällt eine Messung aus, sieht man das als Lücke im Diagramm.
+
+## Setup
+
+Voraussetzung: VPS mit Debian oder Ubuntu, Port 80 und 443 offen. Bei Ionos geht das im Cloud Panel unter Netzwerk > Firewall-Richtlinien.
 
 ```bash
-apt update && apt install -y curl git
+apt update && apt install -y curl git sudo
 curl -fsSL https://raw.githubusercontent.com/yalmn/NetPulse/master/install.sh | bash
 ```
 
-Der Installer:
-1. Prüft/installiert Docker
-2. Erstellt `.env` mit sicherem Passwort
-3. Fragt den Hostnamen ab. Ohne eigene Domain den Vorschlag `<ip-mit-bindestrichen>.sslip.io` übernehmen, das Zertifikat funktioniert trotzdem.
-4. Fragt optional nach einem Globalping-Token (kostenlos auf [dash.globalping.io](https://dash.globalping.io))
-5. Baut und startet alle Container
+Der Installer fragt nach Hostname, Globalping-Token und Dashboard-Name. Ohne eigene Domain einfach den sslip.io-Vorschlag übernehmen. Am Ende werden Server-Adresse und Login-Daten ausgegeben. Das Passwort wird nur einmal angezeigt, also direkt notieren.
 
-Login-Daten (User + Passwort) und die Server-Adresse werden einmalig in der Konsole ausgegeben.
+Den Globalping-Token gibt es kostenlos auf [dash.globalping.io](https://dash.globalping.io).
 
-**Ionos:** Im Cloud Panel unter *Netzwerk, Firewall-Richtlinien* die Ports 80 und 443 (TCP) freigeben. Die alten Ports 3000, 8000, 9090 und 9115 werden nicht mehr gebraucht.
+### Update
 
-## Dashboard auf GitHub Pages
+```bash
+cd ~/netpulse && git pull && docker compose up -d --build
+```
 
-In den Repo-Einstellungen unter *Settings, Pages* als Quelle Branch `master`, Ordner `/docs` wählen. Danach ist das Dashboard unter `https://yalmn.github.io/NetPulse/` erreichbar.
+Nicht `install.sh` erneut ausführen, das setzt alles zurück, auch die Messdaten.
 
-Beim Login die Server-Adresse (z. B. `https://203-0-113-10.sslip.io`), Benutzer und Passwort angeben. Die Server-Adresse lässt sich auch fest als `apiBase` in `docs/config.json` hinterlegen.
+## Dashboard
 
-Die Grafana-Diagramme werden per iframe eingebettet. Beim ersten Öffnen fragt der Browser dort nach denselben Zugangsdaten. Falls ein Browser das im iframe nicht zulässt, öffnet der Button *In neuem Tab öffnen* Grafana direkt.
+In den Repo-Einstellungen unter Settings > Pages als Quelle Branch `master` und Ordner `/docs` wählen. Danach auf https://yalmn.github.io/NetPulse/ mit Server-Adresse, User und Passwort anmelden.
 
-Läuft das Dashboard unter einer anderen Adresse als `https://yalmn.github.io`, diese in `.env` bei `ALLOWED_ORIGINS` ergänzen (kommagetrennt) und `docker compose up -d` ausführen.
+Die Server-Adresse kann man auch fest als `apiBase` in `docs/config.json` eintragen, dann muss man sie beim Login nicht jedes Mal angeben.
+
+Grafana ist im Dashboard eingebettet. Falls der Browser dort nicht nach dem Login fragt, einfach über "In neuem Tab öffnen" gehen.
 
 ## Konfiguration
 
-Alle Einstellungen liegen in `.env` (wird beim Setup automatisch erzeugt):
+Alles steht in der `.env`, die der Installer anlegt:
 
-| Variable               | Default                   | Zweck                                         |
-|------------------------|---------------------------|-----------------------------------------------|
-| `PUBLIC_HOST`          | *Abfrage beim Setup*      | Hostname für HTTPS (Domain oder sslip.io)     |
-| `GF_ADMIN_USER`        | admin                     | Login-User (Dashboard, API, Grafana)          |
-| `GF_ADMIN_PASSWORD`    | *generiert*               | Login-Passwort                                |
-| `ALLOWED_ORIGINS`      | https://yalmn.github.io   | Wer die API aus dem Browser aufrufen darf     |
-| `GLOBALPING_TOKEN`     | leer                      | Höheres Limit für die Länder-Checks           |
-| `GEO_COUNTRIES`        | FR,JP                     | Länder für Globalping                         |
-| `VPS_COUNTRY`          | DE                        | Land des VPS, misst der Blackbox Exporter     |
-| `PROMETHEUS_RETENTION` | 30d                       | Aufbewahrung der Messdaten                    |
-| `HTTP_PORT` / `HTTPS_PORT` | 80 / 443              | Ports von Caddy                               |
-| `DASHBOARD_TITLE`      | Monitoring Dashboard      | Titel des Grafana-Dashboards                  |
+| Variable               | Default                 | Zweck                                      |
+|------------------------|-------------------------|--------------------------------------------|
+| `PUBLIC_HOST`          | wird abgefragt          | Domain oder sslip.io-Hostname              |
+| `GF_ADMIN_USER`        | admin                   | Login für Dashboard, API und Grafana       |
+| `GF_ADMIN_PASSWORD`    | wird generiert          | Passwort dazu                              |
+| `GLOBALPING_TOKEN`     | leer                    | Token für die Länder-Checks                |
+| `GEO_COUNTRIES`        | FR,JP                   | Länder über Globalping                     |
+| `VPS_COUNTRY`          | DE                      | Land des VPS                               |
+| `ALLOWED_ORIGINS`      | https://yalmn.github.io | Von wo die API aufgerufen werden darf      |
+| `PROMETHEUS_RETENTION` | 30d                     | Wie lange Messdaten gespeichert werden     |
+| `DASHBOARD_TITLE`      | Monitoring Dashboard    | Titel in Grafana                           |
 
 ## API
 
-Alle Aufrufe unter `/api` brauchen Basic Auth:
+Alles unter `/api` braucht Basic Auth:
 
 ```bash
-# Ziel mit mehreren Checks anlegen (http, https, icmp, geo)
+# URL mit HTTPS- und Länder-Check
 curl -u admin:PASSWORT -X POST https://HOST/api/targets \
   -H "Content-Type: application/json" \
   -d '{"target": "https://example.com", "types": ["https", "geo"]}'
 
-# IP-Adresse pingen (icmp nur für IPs)
+# IP pingen
 curl -u admin:PASSWORT -X POST https://HOST/api/targets \
   -H "Content-Type: application/json" \
   -d '{"target": "1.1.1.1", "types": ["icmp", "geo"]}'
 
-# Status aller Ziele
+# Status aller Targets
 curl -u admin:PASSWORT https://HOST/api/targets/status
 
-# Ladezeit je Land (Zeitraum 1h, 6h, 24h oder 7d)
-curl -u admin:PASSWORT "https://HOST/api/geo/series?target=https://example.com&range=6h"
-
-# Ziel entfernen
-curl -u admin:PASSWORT -X DELETE "https://HOST/api/targets?type=geo&target=https://example.com"
+# Target löschen
+curl -u admin:PASSWORT -X DELETE "https://HOST/api/targets?type=https&target=https://example.com"
 ```
 
-Interaktive API-Doku: `https://HOST/docs`, die alte Web-UI liegt unter `https://HOST/ui`.
+API-Doku gibt es unter `https://HOST/docs`, die alte Web-UI unter `https://HOST/ui`.
 
 ## Lokal testen
 
+In der `.env` `PUBLIC_HOST=localhost` und `ALLOWED_ORIGINS=https://yalmn.github.io,http://localhost:8080` setzen, dann:
+
 ```bash
-# in .env: PUBLIC_HOST=localhost und ALLOWED_ORIGINS=https://yalmn.github.io,http://localhost:8080
 docker compose up -d --build
-python3 -m http.server -d docs 8080      # Dashboard auf http://localhost:8080
+python3 -m http.server -d docs 8080
 ```
 
-Bei `PUBLIC_HOST=localhost` nutzt Caddy ein lokales Zertifikat, dem der Browser erst vertrauen muss.
+Das Dashboard läuft dann auf http://localhost:8080. Caddy nutzt lokal ein eigenes Zertifikat, das man im Browser einmal akzeptieren muss.
 
-## Reinstall / Deinstallation
-
-`install.sh` erneut ausführen setzt alles zurück (Volumes, Targets, Passwort bleibt aus `.env`).
-
-Komplett entfernen:
+## Deinstallation
 
 ```bash
 bash uninstall.sh
